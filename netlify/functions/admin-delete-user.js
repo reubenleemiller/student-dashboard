@@ -4,38 +4,40 @@
 // Environment variables required:
 //   SUPABASE_URL              – your Supabase project URL
 //   SUPABASE_SERVICE_ROLE_KEY – service role key
-//   ADMIN_EMAIL               – (optional) override the admin email address
+//
+// NOTE: Admin authorization is role-based (profiles.role === 'admin').
+// Do NOT set an ADMIN_EMAIL env var (Netlify secrets scanning will flag it).
 
 const SUPABASE_URL          = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// ADMIN_EMAIL must be set in Netlify environment variables.
-// Fail fast at cold-start time if it is missing rather than silently using
-// a hardcoded value, which would be a security risk in forked deployments.
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-if (!ADMIN_EMAIL) {
-  throw new Error('ADMIN_EMAIL environment variable is required for admin-delete-user');
+if (!SUPABASE_URL) {
+  throw new Error('SUPABASE_URL environment variable is required');
 }
-
-// ── Supabase fetch helpers (mirrors delete-account.js) ────────────────────
+if (!SUPABASE_SERVICE_ROLE) {
+  throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is required');
+}
 
 async function supabaseFetch(path, options = {}) {
   const url = `${SUPABASE_URL}/rest/v1${path}`;
   const res = await fetch(url, {
     ...options,
     headers: {
-      'apikey':        SUPABASE_SERVICE_ROLE,
-      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      'Content-Type':  'application/json',
+      apikey: SUPABASE_SERVICE_ROLE,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
   });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Supabase error ${res.status}: ${body}`);
-  }
+
   const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+
+  if (!res.ok) {
+    throw new Error(`Supabase error ${res.status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+  }
+  return data;
 }
 
 async function supabaseAuthFetch(path, options = {}) {
@@ -43,16 +45,20 @@ async function supabaseAuthFetch(path, options = {}) {
   const res = await fetch(url, {
     ...options,
     headers: {
-      'apikey':        SUPABASE_SERVICE_ROLE,
-      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      'Content-Type':  'application/json',
+      apikey: SUPABASE_SERVICE_ROLE,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
   });
+
   const text = await res.text();
   let data = null;
-  try { data = JSON.parse(text); } catch { data = text; }
-  if (!res.ok) throw new Error(`Auth error ${res.status}: ${JSON.stringify(data)}`);
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+
+  if (!res.ok) {
+    throw new Error(`Auth error ${res.status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+  }
   return data;
 }
 
@@ -61,33 +67,52 @@ async function supabaseStorageFetch(path, options = {}) {
   const res = await fetch(url, {
     ...options,
     headers: {
-      'apikey':        SUPABASE_SERVICE_ROLE,
-      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      'Content-Type':  'application/json',
+      apikey: SUPABASE_SERVICE_ROLE,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
   });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Storage error ${res.status}: ${body}`);
-  }
+
   const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+
+  if (!res.ok) {
+    throw new Error(`Storage error ${res.status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+  }
+  return data;
 }
 
 // Verify the caller's JWT and return their user record
-async function verifyToken(token) {
-  const data = await supabaseAuthFetch('/user', {
-    headers: { 'Authorization': `Bearer ${token}` },
+async function verifyCallerJwt(jwt) {
+  // Call Supabase Auth as the client would (but from server) to validate JWT
+  const url = `${SUPABASE_URL}/auth/v1/user`;
+  const res = await fetch(url, {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE,
+      Authorization: `Bearer ${jwt}`,
+    },
   });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) throw new Error(`Invalid token: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
   return data; // { id, email, ... }
+}
+
+// Fetch caller's role from profiles table (service role bypasses RLS)
+async function getProfileRole(userId) {
+  const rows = await supabaseFetch(`/profiles?id=eq.${encodeURIComponent(userId)}&select=role&limit=1`);
+  if (Array.isArray(rows) && rows.length) return rows[0].role || null;
+  return null;
 }
 
 // List all objects under a storage prefix
 async function listStorageObjects(prefix) {
   const data = await supabaseStorageFetch('/object/list/student-resources', {
     method: 'POST',
-    body:   JSON.stringify({ prefix, limit: 1000, offset: 0 }),
+    body: JSON.stringify({ prefix, limit: 1000, offset: 0 }),
   });
   return Array.isArray(data) ? data : [];
 }
@@ -97,71 +122,75 @@ async function deleteStorageObjects(paths) {
   if (!paths.length) return;
   await supabaseStorageFetch('/object/student-resources', {
     method: 'DELETE',
-    body:   JSON.stringify({ prefixes: paths }),
+    body: JSON.stringify({ prefixes: paths }),
   });
 }
 
-// ── Main handler ──────────────────────────────────────────────────────────
-
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
-  }
-
-  // Extract admin JWT from Authorization header
-  const authHeader = event.headers['authorization'] || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  if (!token) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Missing authorization token' }) };
-  }
-
-  // Verify the caller is a valid, authenticated admin
-  let adminUser;
   try {
-    adminUser = await verifyToken(token);
-  } catch {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Invalid or expired token' }) };
-  }
+    if (event.httpMethod !== 'POST') {
+      return { statusCode: 405, body: 'Method Not Allowed' };
+    }
 
-  if (adminUser.email !== ADMIN_EMAIL) {
-    return { statusCode: 403, body: JSON.stringify({ error: 'Forbidden: admin access only' }) };
-  }
+    // Extract admin JWT from Authorization header
+    const authHeader =
+      event.headers?.authorization ||
+      event.headers?.Authorization ||
+      '';
 
-  // Parse request body
-  let body;
-  try {
-    body = JSON.parse(event.body || '{}');
-  } catch {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON body' }) };
-  }
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (!token) {
+      return { statusCode: 401, body: JSON.stringify({ error: 'Missing authorization token' }) };
+    }
 
-  const { userId } = body;
-  if (!userId || typeof userId !== 'string') {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid userId' }) };
-  }
+    // Verify caller JWT
+    let caller;
+    try {
+      caller = await verifyCallerJwt(token);
+    } catch (err) {
+      return { statusCode: 401, body: JSON.stringify({ error: err.message }) };
+    }
 
-  // Prevent admin from accidentally deleting their own account via this endpoint
-  if (userId === adminUser.id) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Cannot delete your own account via this endpoint' }) };
-  }
+    // Verify caller is admin by role
+    const callerRole = await getProfileRole(caller.id);
+    if (callerRole !== 'admin') {
+      return { statusCode: 403, body: JSON.stringify({ error: 'Forbidden: admin access only' }) };
+    }
 
-  console.log(`Admin ${adminUser.email} deleting user ${userId}`);
+    // Parse request body
+    let body = {};
+    try {
+      body = JSON.parse(event.body || '{}');
+    } catch {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON body' }) };
+    }
 
-  try {
-    // 1. Delete all storage objects under students/<userId>/
-    const prefix  = `students/${userId}/`;
+    const { userId } = body;
+    if (!userId || typeof userId !== 'string') {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid userId' }) };
+    }
+
+    // Prevent deleting self via this endpoint
+    if (userId === caller.id) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Cannot delete your own account via this endpoint' }) };
+    }
+
+    console.log(`Admin ${caller.id} deleting user ${userId}`);
+
+    // 1) Delete storage under students/<userId>/
+    const prefix = `students/${userId}/`;
     const objects = await listStorageObjects(prefix);
-    const paths   = objects.map(o => `${prefix}${o.name}`);
+    const paths = objects.map((o) => `${prefix}${o.name}`);
     await deleteStorageObjects(paths);
 
-    // 2. Delete bookings for the user
-    await supabaseFetch(`/bookings?user_id=eq.${userId}`, { method: 'DELETE' });
+    // 2) Delete bookings for the user (service role policy allows)
+    await supabaseFetch(`/bookings?user_id=eq.${encodeURIComponent(userId)}`, { method: 'DELETE' });
 
-    // 3. Delete the profile row (cascade handles FK references)
-    await supabaseFetch(`/profiles?id=eq.${userId}`, { method: 'DELETE' });
+    // 3) Delete profile row
+    await supabaseFetch(`/profiles?id=eq.${encodeURIComponent(userId)}`, { method: 'DELETE' });
 
-    // 4. Delete the Supabase Auth user (requires service role)
-    await supabaseAuthFetch(`/admin/users/${userId}`, { method: 'DELETE' });
+    // 4) Delete Supabase Auth user (Admin API; requires service role)
+    await supabaseAuthFetch(`/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (err) {
