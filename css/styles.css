@@ -4,9 +4,9 @@
 
 /* ── CSS custom properties ─────────────────────────────────────────── */
 :root {
-  --primary:        #4f46e5;
-  --primary-hover:  #4338ca;
-  --primary-light:  #eef2ff;
+  --primary:        #7FC571;
+  --primary-hover:  #6aaa5e;
+  --primary-light:  #edf7eb;
   --secondary:      #0ea5e9;
   --bg:             #f8fafc;
   --surface:        #ffffff;
@@ -106,7 +106,7 @@ label        { font-size: .875rem; font-weight: 500; }
 .form-input:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(79,70,229,.1);
+  box-shadow: 0 0 0 3px rgba(127,197,113,.15);
 }
 .form-input::placeholder { color: var(--text-muted); }
 .form-hint   { font-size: .75rem; color: var(--text-muted); }
@@ -141,6 +141,14 @@ label        { font-size: .875rem; font-weight: 500; }
 }
 .auth-logo h1 { font-size: 1.5rem; color: var(--primary); }
 .auth-logo p  { color: var(--text-muted); margin-top: .25rem; font-size: .875rem; }
+.auth-logo-img {
+  height: 56px;
+  width: auto;
+  max-width: 200px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto .5rem;
+}
 .auth-links   { text-align: center; margin-top: 1rem; font-size: .875rem; color: var(--text-muted); }
 .auth-divider { border: none; border-top: 1px solid var(--border); margin: 1.25rem 0; }
 
@@ -172,6 +180,13 @@ label        { font-size: .875rem; font-weight: 500; }
   justify-content: space-between;
 }
 .sidebar-header h2 { font-size: 1rem; color: var(--primary); }
+.sidebar-logo {
+  height: 36px;
+  width: auto;
+  max-width: 160px;
+  object-fit: contain;
+  display: block;
+}
 .sidebar-toggle {
   display: none;
   background: none;
@@ -466,7 +481,7 @@ tbody td { padding: .75rem; vertical-align: middle; }
 }
 .alert-error   { background: var(--danger-light);  color: #991b1b; border: 1px solid #fecaca; }
 .alert-success { background: var(--success-light); color: #166534; border: 1px solid #bbf7d0; }
-.alert-info    { background: var(--primary-light); color: var(--primary); border: 1px solid #c7d2fe; }
+.alert-info    { background: var(--primary-light); color: var(--primary); border: 1px solid #b9e5b1; }
 
 /* ── Modal / dialog ─────────────────────────────────────────────────── */
 .modal-overlay {

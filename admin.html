@@ -14,7 +14,9 @@
     <!-- ── Sidebar ── -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <h2>RM Tutoring</h2>
+        <a href="/index.html" class="flex items-center" style="text-decoration:none">
+          <img src="/images/logo.svg" alt="RM Tutoring" class="sidebar-logo" />
+        </a>
         <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle menu"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
       </div>
       <nav class="sidebar-nav" role="navigation">
@@ -44,6 +46,11 @@
       <section id="section-students" class="section active">
         <div class="page-header">
           <div><h1>Students</h1><p>All registered student accounts.</p></div>
+          <div>
+            <button class="btn btn-primary btn-sm" id="inviteStudentBtn">
+              <i class="fa-solid fa-envelope" aria-hidden="true"></i> Invite Student
+            </button>
+          </div>
         </div>
         <div class="search-bar">
           <input id="studentSearch" type="search" class="form-input" placeholder="Search by name or email…" />
@@ -159,6 +166,28 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" id="editNameCancel">Cancel</button>
         <button class="btn btn-primary" id="editNameSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invite student modal -->
+  <div id="inviteStudentModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="inviteStudentModalTitle">
+    <div class="modal">
+      <h3 id="inviteStudentModalTitle"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Invite Student</h3>
+      <div class="form-group mt-2">
+        <label for="inviteEmailInput">Email <span aria-hidden="true">*</span></label>
+        <input id="inviteEmailInput" type="email" class="form-input" placeholder="student@example.com" maxlength="254" autocomplete="off" required />
+      </div>
+      <div class="form-group mt-2">
+        <label for="inviteNameInput">Full Name <span class="text-muted">(optional)</span></label>
+        <input id="inviteNameInput" type="text" class="form-input" placeholder="Student's full name" maxlength="128" autocomplete="off" />
+      </div>
+      <div id="inviteStudentError" class="form-error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="inviteStudentCancel">Cancel</button>
+        <button class="btn btn-primary" id="inviteStudentSubmit">
+          <i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send Invite
+        </button>
       </div>
     </div>
   </div>
@@ -303,7 +332,78 @@
       renderStudentsTable(filtered);
     });
 
-    /** Edit student full name via modal. */
+    /** Invite a new student via the admin invite endpoint. */
+    document.getElementById('inviteStudentBtn').addEventListener('click', () => inviteStudent());
+
+    async function inviteStudent() {
+      const modal     = document.getElementById('inviteStudentModal');
+      const emailInput= document.getElementById('inviteEmailInput');
+      const nameInput = document.getElementById('inviteNameInput');
+      const errEl     = document.getElementById('inviteStudentError');
+      const cancelBtn = document.getElementById('inviteStudentCancel');
+      const submitBtn = document.getElementById('inviteStudentSubmit');
+
+      emailInput.value = '';
+      nameInput.value  = '';
+      errEl.textContent = '';
+      errEl.classList.add('hidden');
+      modal.classList.remove('hidden');
+      requestAnimationFrame(() => emailInput.focus());
+
+      await new Promise(resolve => {
+        function cleanup() {
+          modal.classList.add('hidden');
+          cancelBtn.removeEventListener('click', onCancel);
+          submitBtn.removeEventListener('click', onSubmit);
+          emailInput.removeEventListener('keydown', onKey);
+          nameInput.removeEventListener('keydown', onKey);
+          resolve();
+        }
+        function onCancel() { cleanup(); }
+        async function onSubmit() {
+          const email    = emailInput.value.trim();
+          const fullName = nameInput.value.trim();
+          if (!email) {
+            errEl.textContent = 'Email is required.';
+            errEl.classList.remove('hidden');
+            emailInput.focus();
+            return;
+          }
+          errEl.classList.add('hidden');
+          setBtnLoading(submitBtn, true, 'Sending…');
+          try {
+            const { data: { session: adminSession } } = await supabase.auth.getSession();
+            const res = await fetch('/api/admin-invite-student', {
+              method: 'POST',
+              headers: {
+                'Content-Type':  'application/json',
+                'Authorization': `Bearer ${adminSession.access_token}`,
+              },
+              body: JSON.stringify({ email, fullName }),
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || 'Invite failed');
+            showToast(`Invitation sent to ${email}.`, 'success');
+            cleanup();
+          } catch (err) {
+            errEl.textContent = err.message;
+            errEl.classList.remove('hidden');
+            setBtnLoading(submitBtn, false);
+          }
+        }
+        function onKey(e) {
+          if (e.key === 'Escape') onCancel();
+          if (e.key === 'Enter') { e.preventDefault(); onSubmit(); }
+        }
+        cancelBtn.addEventListener('click', onCancel);
+        submitBtn.addEventListener('click', onSubmit);
+        emailInput.addEventListener('keydown', onKey);
+        nameInput.addEventListener('keydown', onKey);
+        modal.addEventListener('click', e => { if (e.target === modal) onCancel(); }, { once: true });
+      });
+    }
+
+
     async function editStudentName(studentId, currentName) {
       const modal    = document.getElementById('editNameModal');
       const input    = document.getElementById('editNameInput');

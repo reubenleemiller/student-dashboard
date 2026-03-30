@@ -43,3 +43,8 @@
   from = "/api/admin-delete-booking"
   to = "/.netlify/functions/admin-delete-booking"
   status = 200
+
+[[redirects]]
+  from = "/api/admin-invite-student"
+  to = "/.netlify/functions/admin-invite-student"
+  status = 200

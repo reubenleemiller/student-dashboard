@@ -12,7 +12,7 @@ A deployable student portal built with **HTML / CSS / vanilla JS**, backed by **
 | Student bookings | View upcoming/past bookings (list + month calendar); join, cancel, reschedule links |
 | Book a session | Embedded Cal.com booking widgets (60 / 90 / 120 min) with email pre-fill |
 | Resources | Per-student private file storage (upload, download, create folders, delete) |
-| Admin dashboard | View all students, all bookings (with links), browse & manage any student's storage |
+| Admin dashboard | View all students, all bookings (with links), browse & manage any student's storage, invite students by email |
 | Webhook sync | Netlify Function receives Cal.com events → upserts bookings into Supabase |
 
 ---
@@ -37,7 +37,8 @@ A deployable student portal built with **HTML / CSS / vanilla JS**, backed by **
 │   └── functions/
 │       ├── public-config.js    Returns SUPABASE_URL + SUPABASE_ANON_KEY to the browser
 │       ├── cal-webhook.js      Cal.com webhook receiver
-│       └── delete-account.js   Secure account-deletion endpoint
+│       ├── delete-account.js   Secure account-deletion endpoint
+│       └── admin-invite-student.js  Admin-only endpoint to invite a student by email
 ├── supabase/
 │   └── schema.sql              All tables, triggers, and RLS policies
 └── netlify.toml                Netlify build & functions configuration
@@ -183,7 +184,7 @@ ngrok http 8888
 |---|---|---|
 | `SUPABASE_URL` | `public-config` function + other functions | Supabase project URL — served to the browser at runtime via `/api/public-config` |
 | `SUPABASE_ANON_KEY` | `public-config` function (served to browser at runtime) | Public anon key — never hard-coded in repo |
-| `SUPABASE_SERVICE_ROLE_KEY` | Netlify Functions only | Admin key — never expose to browser |
+| `SUPABASE_SERVICE_ROLE_KEY` | Netlify Functions only | Admin key — never expose to browser; required by `admin-invite-student`, `admin-delete-user`, `admin-delete-booking`, and `delete-account` |
 | `CAL_WEBHOOK_SECRET` | `netlify/functions/cal-webhook.js` | HMAC secret to verify Cal.com payloads |
 
 ---
