@@ -1,6 +1,5 @@
-// netlify/functions/admin-delete-user.js
-// Admin-only endpoint to fully delete a student account:
-//   storage objects, bookings, profile row, and Supabase Auth user.
+// netlify/functions/admin-delete-booking.js
+// Admin-only endpoint to permanently delete a cancelled booking row.
 // Environment variables required:
 //   SUPABASE_URL              – your Supabase project URL
 //   SUPABASE_SERVICE_ROLE_KEY – service role key
@@ -40,53 +39,8 @@ async function supabaseFetch(path, options = {}) {
   return data;
 }
 
-async function supabaseAuthFetch(path, options = {}) {
-  const url = `${SUPABASE_URL}/auth/v1${path}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  });
-
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-
-  if (!res.ok) {
-    throw new Error(`Auth error ${res.status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
-  }
-  return data;
-}
-
-async function supabaseStorageFetch(path, options = {}) {
-  const url = `${SUPABASE_URL}/storage/v1${path}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  });
-
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-
-  if (!res.ok) {
-    throw new Error(`Storage error ${res.status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
-  }
-  return data;
-}
-
 // Verify the caller's JWT and return their user record
 async function verifyCallerJwt(jwt) {
-  // Call Supabase Auth as the client would (but from server) to validate JWT
   const url = `${SUPABASE_URL}/auth/v1/user`;
   const res = await fetch(url, {
     headers: {
@@ -106,24 +60,6 @@ async function getProfileRole(userId) {
   const rows = await supabaseFetch(`/profiles?id=eq.${encodeURIComponent(userId)}&select=role&limit=1`);
   if (Array.isArray(rows) && rows.length) return rows[0].role || null;
   return null;
-}
-
-// List all objects under a storage prefix
-async function listStorageObjects(prefix) {
-  const data = await supabaseStorageFetch('/object/list/student-resources', {
-    method: 'POST',
-    body: JSON.stringify({ prefix, limit: 1000, offset: 0 }),
-  });
-  return Array.isArray(data) ? data : [];
-}
-
-// Delete multiple storage objects by path
-async function deleteStorageObjects(paths) {
-  if (!paths.length) return;
-  await supabaseStorageFetch('/object/student-resources', {
-    method: 'DELETE',
-    body: JSON.stringify({ prefixes: paths }),
-  });
 }
 
 exports.handler = async (event) => {
@@ -165,36 +101,32 @@ exports.handler = async (event) => {
       return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON body' }) };
     }
 
-    const { userId } = body;
-    if (!userId || typeof userId !== 'string') {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid userId' }) };
+    const { bookingId } = body;
+    if (!bookingId || typeof bookingId !== 'string') {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid bookingId' }) };
     }
 
-    // Prevent deleting self via this endpoint
-    if (userId === caller.id) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Cannot delete your own account via this endpoint' }) };
+    // Fetch the booking to confirm it is cancelled
+    const rows = await supabaseFetch(
+      `/bookings?id=eq.${encodeURIComponent(bookingId)}&select=id,status&limit=1`
+    );
+
+    if (!Array.isArray(rows) || !rows.length) {
+      return { statusCode: 404, body: JSON.stringify({ error: 'Booking not found' }) };
     }
 
-    console.log(`Admin ${caller.id} deleting user ${userId}`);
+    if (rows[0].status !== 'cancelled') {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Only cancelled bookings can be deleted' }) };
+    }
 
-    // 1) Delete storage under students/<userId>/
-    const prefix = `students/${userId}/`;
-    const objects = await listStorageObjects(prefix);
-    const paths = objects.map((o) => `${prefix}${o.name}`);
-    await deleteStorageObjects(paths);
+    console.log(`Admin ${caller.id} deleting booking ${bookingId}`);
 
-    // 2) Delete bookings for the user (service role policy allows)
-    await supabaseFetch(`/bookings?user_id=eq.${encodeURIComponent(userId)}`, { method: 'DELETE' });
-
-    // 3) Delete profile row
-    await supabaseFetch(`/profiles?id=eq.${encodeURIComponent(userId)}`, { method: 'DELETE' });
-
-    // 4) Delete Supabase Auth user (Admin API; requires service role)
-    await supabaseAuthFetch(`/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+    // Permanently delete the booking row
+    await supabaseFetch(`/bookings?id=eq.${encodeURIComponent(bookingId)}`, { method: 'DELETE' });
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (err) {
-    console.error('admin-delete-user error:', err);
+    console.error('admin-delete-booking error:', err);
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 };

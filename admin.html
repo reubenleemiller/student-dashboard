@@ -353,15 +353,21 @@
       const rows = subset.map(b => {
         const studentName = b.profiles?.full_name || b.profiles?.email || b.user_email || '–';
         const badge       = `<span class="badge badge-${b.status}">${b.status}</span>`;
-        const join        = b.join_url
+        const join        = b.status === 'scheduled' && b.join_url
           ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="fa-solid fa-link" aria-hidden="true"></i> Join</a>`
           : '<span class="text-muted">–</span>';
-        const cancel = b.cancel_url
-          ? `<a href="${b.cancel_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Cancel</a>`
-          : '';
-        const reschedule = b.reschedule_url
-          ? `<a href="${b.reschedule_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Reschedule</a>`
-          : '';
+        let actions = '';
+        if (b.status === 'scheduled') {
+          const cancel = b.cancel_url
+            ? `<a href="${b.cancel_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Cancel</a>`
+            : '';
+          const reschedule = b.reschedule_url
+            ? `<a href="${b.reschedule_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Reschedule</a>`
+            : '';
+          actions = `${cancel}${reschedule}`;
+        } else if (b.status === 'cancelled') {
+          actions = `<button class="btn btn-danger btn-sm delete-booking-btn" data-id="${b.id}">Delete</button>`;
+        }
         return `
           <tr>
             <td>${studentName}</td>
@@ -369,7 +375,7 @@
             <td>${b.event_type || '–'}</td>
             <td>${badge}</td>
             <td>${join}</td>
-            <td class="flex gap-2" style="flex-wrap:wrap">${cancel}${reschedule}</td>
+            <td class="flex gap-2" style="flex-wrap:wrap">${actions}</td>
           </tr>`;
       }).join('');
 
@@ -383,6 +389,38 @@
             <tbody>${rows}</tbody>
           </table>
         </div>`;
+
+      wrap.querySelectorAll('.delete-booking-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteBooking(btn.dataset.id, btn));
+      });
+    }
+
+    async function deleteBooking(bookingId, btn) {
+      const confirmed = await confirmModal(
+        'Permanently delete this cancelled booking? This cannot be undone.',
+        'Delete',
+        true
+      );
+      if (!confirmed) return;
+      setBtnLoading(btn, true, 'Deleting…');
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch('/api/admin-delete-booking', {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ bookingId }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Deletion failed');
+        showToast('Booking deleted.', 'success');
+        await loadAllBookings(currentStudentId, currentStudentName);
+      } catch (err) {
+        showToast(err.message, 'error');
+        setBtnLoading(btn, false);
+      }
     }
 
     // ── Storage browser ────────────────────────────────────────────────

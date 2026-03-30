@@ -324,6 +324,7 @@
         .from('bookings')
         .select('*')
         .eq('user_id', user.id)
+        .eq('archived_by_user', false)
         .order('start_time', { ascending: false });
 
       if (error) {
@@ -351,22 +352,31 @@
       const rows = subset.map(b => {
         const st    = formatDate(b.start_time);
         const badge = `<span class="badge badge-${b.status}">${b.status}</span>`;
-        const join  = b.join_url
-          ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="fa-solid fa-link" aria-hidden="true"></i> Join</a>`
-          : '<span class="text-muted">–</span>';
-        const cancel = b.cancel_url
-          ? `<a href="${b.cancel_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Cancel</a>`
-          : '';
-        const reschedule = b.reschedule_url
-          ? `<a href="${b.reschedule_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Reschedule</a>`
-          : '';
+        let joinCell    = '<span class="text-muted">–</span>';
+        let actionsCell = '';
+
+        if (b.status === 'scheduled') {
+          joinCell = b.join_url
+            ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="fa-solid fa-link" aria-hidden="true"></i> Join</a>`
+            : '<span class="text-muted">–</span>';
+          const cancel = b.cancel_url
+            ? `<a href="${b.cancel_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Cancel</a>`
+            : '';
+          const reschedule = b.reschedule_url
+            ? `<a href="${b.reschedule_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Reschedule</a>`
+            : '';
+          actionsCell = `${cancel}${reschedule}`;
+        } else if (b.status === 'cancelled') {
+          actionsCell = `<button class="btn btn-ghost btn-sm remove-booking-btn" data-id="${b.id}">Remove</button>`;
+        }
+
         return `
           <tr>
             <td>${st}</td>
             <td>${b.event_type || '–'}</td>
             <td>${badge}</td>
-            <td>${join}</td>
-            <td class="flex gap-2" style="flex-wrap:wrap">${cancel}${reschedule}</td>
+            <td>${joinCell}</td>
+            <td class="flex gap-2" style="flex-wrap:wrap">${actionsCell}</td>
           </tr>`;
       }).join('');
 
@@ -380,6 +390,32 @@
             <tbody>${rows}</tbody>
           </table>
         </div>`;
+
+      wrap.querySelectorAll('.remove-booking-btn').forEach(btn => {
+        btn.addEventListener('click', () => removeBooking(btn.dataset.id, btn));
+      });
+    }
+
+    async function removeBooking(bookingId, btn) {
+      const confirmed = await confirmModal(
+        'Hide this cancelled booking from your view? It will no longer appear in your list. Contact support if you need to see it again.',
+        'Remove'
+      );
+      if (!confirmed) return;
+      setBtnLoading(btn, true, 'Removing…');
+      const { error } = await supabase
+        .from('bookings')
+        .update({ archived_by_user: true })
+        .eq('id', bookingId);
+      if (error) {
+        showToast(error.message, 'error');
+        setBtnLoading(btn, false);
+        return;
+      }
+      showToast('Booking removed from your view.', 'success');
+      allBookings = allBookings.filter(b => b.id !== bookingId);
+      renderBookingsList();
+      if (bookingsView === 'cal') renderCalendar();
     }
 
     function renderCalendar() {
@@ -397,7 +433,7 @@
               <span class="badge badge-${b.status}">${b.status}</span>
               <span>${formatDate(b.start_time)}</span>
               <span class="text-muted text-sm">${b.event_type || ''}</span>
-              ${b.join_url ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="fa-solid fa-link" aria-hidden="true"></i> Join</a>` : ''}
+              ${b.status === 'scheduled' && b.join_url ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="fa-solid fa-link" aria-hidden="true"></i> Join</a>` : ''}
             </div>`).join('');
           detail.classList.remove('hidden');
         });

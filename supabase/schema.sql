@@ -43,12 +43,13 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   end_time         TIMESTAMPTZ NOT NULL,
   status           TEXT        NOT NULL DEFAULT 'scheduled'
                                  CHECK (status IN ('scheduled','cancelled','rescheduled','completed')),
-  join_url         TEXT,
-  cancel_url       TEXT,
-  reschedule_url   TEXT,
-  raw_payload      JSONB,
-  created_at       TIMESTAMPTZ DEFAULT NOW(),
-  updated_at       TIMESTAMPTZ DEFAULT NOW()
+  join_url             TEXT,
+  cancel_url           TEXT,
+  reschedule_url       TEXT,
+  raw_payload          JSONB,
+  archived_by_user     BOOLEAN     NOT NULL DEFAULT FALSE,
+  created_at           TIMESTAMPTZ DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
@@ -66,6 +67,12 @@ CREATE POLICY "Service role manages bookings" ON public.bookings
   FOR ALL TO service_role
   USING (true)
   WITH CHECK (true);
+
+-- Students can mark their own booking as hidden from their view (archived_by_user)
+CREATE POLICY "Students update own bookings" ON public.bookings
+  FOR UPDATE TO authenticated
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
 
 -- -------------------------
 -- 3. Auto-create profile on signup

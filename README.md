@@ -185,7 +185,6 @@ ngrok http 8888
 | `SUPABASE_ANON_KEY` | `public-config` function (served to browser at runtime) | Public anon key — never hard-coded in repo |
 | `SUPABASE_SERVICE_ROLE_KEY` | Netlify Functions only | Admin key — never expose to browser |
 | `CAL_WEBHOOK_SECRET` | `netlify/functions/cal-webhook.js` | HMAC secret to verify Cal.com payloads |
-| `ADMIN_EMAIL` | `netlify/functions/admin-delete-user.js` | Admin email address — **required** for the admin-delete-user function |
 
 ---
 
@@ -197,8 +196,9 @@ ngrok http 8888
 - Users can UPDATE only their own row.
 
 ### `bookings` table
-- Authenticated users can **SELECT** rows where `user_id = auth.uid()`.
-- The admin email can SELECT all rows.
+- Authenticated users can **SELECT** rows where `user_id = auth.uid()` and `archived_by_user = false`.
+- The admin email can SELECT all rows (including archived).
+- Authenticated users can **UPDATE** their own rows to set `archived_by_user = true` (hide cancelled bookings from their own view).
 - Only the **service role** (Netlify Functions) can INSERT / UPDATE / DELETE.
 
 ### `storage.objects` (bucket: `student-resources`)
@@ -231,3 +231,25 @@ Student sees booking in dashboard (queried from Supabase)
 - **No Cal.com API key is required** for the student-facing features — bookings are synced one-way via webhooks.
 - Cancel and reschedule actions redirect to Cal.com's native cancel/reschedule pages.
 - The Cal.com embed pre-fills the student's registered email to ensure booking-to-account matching.
+
+---
+
+## Database migrations
+
+### Adding `archived_by_user` column (run once on existing databases)
+
+If you already have a live Supabase database created before this column was added to `schema.sql`, run the following SQL in the **Supabase SQL Editor**:
+
+```sql
+-- Add archived_by_user column (idempotent)
+ALTER TABLE public.bookings
+  ADD COLUMN IF NOT EXISTS archived_by_user BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Allow students to update their own booking rows (e.g. to hide cancelled bookings)
+CREATE POLICY IF NOT EXISTS "Students update own bookings" ON public.bookings
+  FOR UPDATE TO authenticated
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+```
+
+Fresh installations can skip this — `schema.sql` already includes the column and policy.
