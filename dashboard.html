@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Dashboard – RM Tutoring</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <style>
+    /* Cal.com embed sizing */
+    .cal-frame { width: 100%; min-height: 700px; border: none; border-radius: var(--radius); }
+    .prefill-notice {
+      background: var(--primary-light);
+      color: var(--primary);
+      border: 1px solid #c7d2fe;
+      border-radius: var(--radius);
+      padding: .625rem 1rem;
+      font-size: .875rem;
+      margin-bottom: .75rem;
+    }
+  </style>
+</head>
+<body>
+  <div id="toast-container" class="toast-container"></div>
+
+  <div class="app-layout">
+    <!-- ── Sidebar ── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h2>RM Tutoring</h2>
+        <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle menu">☰</button>
+      </div>
+      <nav class="sidebar-nav" role="navigation">
+        <a class="nav-item active" data-section="overview" href="#">
+          <span class="nav-icon">🏠</span> Overview
+        </a>
+        <a class="nav-item" data-section="bookings" href="#">
+          <span class="nav-icon">📋</span> My Bookings
+        </a>
+        <a class="nav-item" data-section="book" href="#">
+          <span class="nav-icon">➕</span> Book a Session
+        </a>
+        <a class="nav-item" data-section="resources" href="#">
+          <span class="nav-icon">📁</span> Resources
+        </a>
+        <a class="nav-item" data-section="account" href="#">
+          <span class="nav-icon">⚙️</span> Account
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info" id="userInfo"></div>
+        <button class="btn btn-ghost btn-sm btn-block" id="logoutBtn">Logout</button>
+      </div>
+    </aside>
+
+    <!-- ── Main content ── -->
+    <main class="main-content">
+      <!-- Mobile menu toggle -->
+      <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu">
+        ☰ Menu
+      </button>
+
+      <!-- ── OVERVIEW ───────────────────────────────────────────────── -->
+      <section id="section-overview" class="section active">
+        <div class="page-header">
+          <div>
+            <h1>Overview</h1>
+            <p id="welcomeMsg">Welcome back!</p>
+          </div>
+        </div>
+
+        <!-- Next session -->
+        <div id="nextSessionCard"></div>
+
+        <!-- Stats -->
+        <div class="stats-grid" id="statsGrid">
+          <div class="stat-card">
+            <div class="stat-value" id="statUpcoming">–</div>
+            <div class="stat-label">Upcoming sessions</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statPast">–</div>
+            <div class="stat-label">Past sessions</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statFiles">–</div>
+            <div class="stat-label">Files in resources</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <p class="text-muted text-sm">Use the sidebar to navigate between bookings, file resources, and account settings.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── BOOKINGS ───────────────────────────────────────────────── -->
+      <section id="section-bookings" class="section">
+        <div class="page-header">
+          <div><h1>My Bookings</h1></div>
+          <div class="tabs" style="margin-bottom:0">
+            <button class="tab-btn active" data-view="list">List</button>
+            <button class="tab-btn"        data-view="cal">Calendar</button>
+          </div>
+        </div>
+
+        <!-- List view -->
+        <div id="bookings-list-view">
+          <div class="tabs">
+            <button class="tab-btn active" data-filter="upcoming">Upcoming</button>
+            <button class="tab-btn"        data-filter="past">Past</button>
+          </div>
+          <div class="card">
+            <div id="bookingsTableWrap">
+              <div class="loading-state"><span class="spinner"></span> Loading…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Calendar view -->
+        <div id="bookings-cal-view" class="hidden">
+          <div id="calendarContainer"></div>
+          <div id="calDayDetail" class="card mt-4 hidden">
+            <div class="card-header" id="calDayDetailHeader"></div>
+            <div class="card-body" id="calDayDetailBody"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── BOOK A SESSION ─────────────────────────────────────────── -->
+      <section id="section-book" class="section">
+        <div class="page-header">
+          <div>
+            <h1>Book a Session</h1>
+            <p>Choose a session length and pick a time that works for you.</p>
+          </div>
+        </div>
+
+        <div id="bookingEmailNotice" class="prefill-notice hidden"></div>
+
+        <div class="cal-tabs">
+          <button class="btn btn-primary  active-cal-btn" data-duration="60min">60 Minutes</button>
+          <button class="btn btn-outline"                  data-duration="90min">90 Minutes</button>
+          <button class="btn btn-outline"                  data-duration="120min">120 Minutes</button>
+        </div>
+
+        <div class="cal-embed-wrapper active" id="cal-wrap-60min">
+          <div class="cal-embed-container">
+            <div id="cal-inline-60min" style="width:100%;min-height:700px;"></div>
+          </div>
+        </div>
+        <div class="cal-embed-wrapper" id="cal-wrap-90min">
+          <div class="cal-embed-container">
+            <div id="cal-inline-90min" style="width:100%;min-height:700px;"></div>
+          </div>
+        </div>
+        <div class="cal-embed-wrapper" id="cal-wrap-120min">
+          <div class="cal-embed-container">
+            <div id="cal-inline-120min" style="width:100%;min-height:700px;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── RESOURCES ─────────────────────────────────────────────── -->
+      <section id="section-resources" class="section">
+        <div class="page-header">
+          <div><h1>Resources</h1><p>Your private file storage area.</p></div>
+          <div class="flex gap-2">
+            <button class="btn btn-outline btn-sm" id="newFolderBtn">📁 New Folder</button>
+            <label class="btn btn-primary btn-sm" for="fileUpload" style="cursor:pointer">
+              ⬆ Upload File
+              <input type="file" id="fileUpload" class="hidden" multiple />
+            </label>
+          </div>
+        </div>
+
+        <nav aria-label="File path" id="breadcrumbNav" class="breadcrumb"></nav>
+
+        <div class="card">
+          <div id="fileListWrap">
+            <div class="loading-state"><span class="spinner"></span> Loading…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── ACCOUNT ───────────────────────────────────────────────── -->
+      <section id="section-account" class="section">
+        <div class="page-header"><h1>Account Settings</h1></div>
+
+        <!-- Change password -->
+        <div class="card mb-4">
+          <div class="card-header"><h2 class="text-sm bold">Change Password</h2></div>
+          <div class="card-body">
+            <div id="pwdAlert" class="alert hidden"></div>
+            <form id="changePwdForm" novalidate style="max-width:400px">
+              <div class="form-group">
+                <label for="newPwd">New password</label>
+                <input id="newPwd" type="password" class="form-input" placeholder="At least 8 characters" required minlength="8" autocomplete="new-password" />
+              </div>
+              <div class="form-group">
+                <label for="confirmPwd">Confirm new password</label>
+                <input id="confirmPwd" type="password" class="form-input" placeholder="Repeat password" required autocomplete="new-password" />
+              </div>
+              <button type="submit" class="btn btn-primary" id="changePwdBtn">Update Password</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Delete account -->
+        <div class="danger-zone">
+          <h3>Delete Account</h3>
+          <p class="text-sm mt-2 mb-3">This permanently deletes your account, all bookings data, and all files in your resources folder. This action <strong>cannot be undone</strong>.</p>
+          <button class="btn btn-danger btn-sm" id="deleteAccountBtn">Delete My Account</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Cal.com embed script (loaded once) -->
+  <script>
+    (function (C, A, L) {
+      let p = function (a, ar) { a.q.push(ar); };
+      let d = C.document;
+      C.Cal = C.Cal || function () {
+        let cal = C.Cal; let ar = arguments;
+        if (!cal.loaded) { cal.ns = {}; cal.q = cal.q || []; d.head.appendChild(d.createElement("script")).src = A; cal.loaded = true; }
+        if (ar[0] === L) { const api = function () { p(api, arguments); }; const namespace = ar[1]; api.q = api.q || []; typeof namespace === "string" ? (cal.ns[namespace] = api) && p(api, ar) : p(cal, ar); return; }
+        p(cal, ar);
+      };
+    })(window, "https://app.cal.com/embed/embed.js", "init");
+  </script>
+
+  <script type="module">
+    import { supabase }                                  from '/js/supabase-client.js';
+    import { requireAuth, ADMIN_EMAIL, showToast,
+             confirmModal, formatDate, formatFileSize }  from '/js/auth.js';
+    import { BookingCalendar }                           from '/js/calendar.js';
+
+    // ── Configuration ─────────────────────────────────────────────────
+    const CAL_USERNAME = 'rleemiller'; // Cal.com username for event type links
+
+    // ── Auth guard ────────────────────────────────────────────────────
+    const session = await requireAuth();
+    if (!session) throw new Error('No session');
+    if (session.user.email === ADMIN_EMAIL) {
+      window.location.href = '/admin.html';
+    }
+    const user = session.user;
+
+    // ── User info ─────────────────────────────────────────────────────
+    document.getElementById('userInfo').textContent = user.email;
+
+    // Fetch profile name
+    const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).single();
+    const displayName = profile?.full_name || user.email.split('@')[0];
+    document.getElementById('welcomeMsg').textContent = `Welcome back, ${displayName}!`;
+
+    // ── Logout ────────────────────────────────────────────────────────
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await supabase.auth.signOut();
+      window.location.href = '/login.html';
+    });
+
+    // ── Sidebar navigation ────────────────────────────────────────────
+    const sidebar        = document.getElementById('sidebar');
+    const sidebarToggle  = document.getElementById('sidebarToggle');
+    const mobileMenuBtn  = document.getElementById('mobileMenuBtn');
+
+    function toggleSidebar() { sidebar.classList.toggle('open'); }
+    sidebarToggle.addEventListener('click', toggleSidebar);
+    mobileMenuBtn.addEventListener('click', toggleSidebar);
+
+    document.querySelectorAll('.nav-item[data-section]').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        const sec = item.dataset.section;
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        item.classList.add('active');
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        document.getElementById(`section-${sec}`).classList.add('active');
+        if (window.innerWidth <= 768) sidebar.classList.remove('open');
+        if (sec === 'bookings')   loadBookings();
+        if (sec === 'resources')  loadFiles(currentPath);
+        if (sec === 'overview')   loadOverview();
+      });
+    });
+
+    // ── Bookings ──────────────────────────────────────────────────────
+    let allBookings    = [];
+    let bookingsFilter = 'upcoming';
+    let bookingsView   = 'list';
+    let calInstance    = null;
+
+    // View toggle (List / Calendar)
+    document.querySelectorAll('.tab-btn[data-view]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn[data-view]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        bookingsView = btn.dataset.view;
+        document.getElementById('bookings-list-view').classList.toggle('hidden', bookingsView === 'cal');
+        document.getElementById('bookings-cal-view').classList.toggle('hidden',  bookingsView === 'list');
+        if (bookingsView === 'cal') renderCalendar();
+      });
+    });
+
+    // Filter toggle (Upcoming / Past)
+    document.querySelectorAll('.tab-btn[data-filter]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn[data-filter]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        bookingsFilter = btn.dataset.filter;
+        renderBookingsList();
+      });
+    });
+
+    async function loadBookings() {
+      const wrap = document.getElementById('bookingsTableWrap');
+      wrap.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading…</div>';
+
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('start_time', { ascending: false });
+
+      if (error) {
+        wrap.innerHTML = `<div class="alert alert-error m-4">${error.message}</div>`;
+        return;
+      }
+      allBookings = data || [];
+      renderBookingsList();
+      if (bookingsView === 'cal') renderCalendar();
+    }
+
+    function renderBookingsList() {
+      const now    = new Date();
+      const subset = allBookings.filter(b => {
+        const st = new Date(b.start_time);
+        return bookingsFilter === 'upcoming' ? st >= now : st < now;
+      });
+      const wrap = document.getElementById('bookingsTableWrap');
+
+      if (!subset.length) {
+        wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">${bookingsFilter === 'upcoming' ? '📅' : '📂'}</div><p>No ${bookingsFilter} sessions.</p></div>`;
+        return;
+      }
+
+      const rows = subset.map(b => {
+        const st    = formatDate(b.start_time);
+        const badge = `<span class="badge badge-${b.status}">${b.status}</span>`;
+        const join  = b.join_url
+          ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">🔗 Join</a>`
+          : '<span class="text-muted">–</span>';
+        const cancel = b.cancel_url
+          ? `<a href="${b.cancel_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Cancel</a>`
+          : '';
+        const reschedule = b.reschedule_url
+          ? `<a href="${b.reschedule_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Reschedule</a>`
+          : '';
+        return `
+          <tr>
+            <td>${st}</td>
+            <td>${b.event_type || '–'}</td>
+            <td>${badge}</td>
+            <td>${join}</td>
+            <td class="flex gap-2" style="flex-wrap:wrap">${cancel}${reschedule}</td>
+          </tr>`;
+      }).join('');
+
+      wrap.innerHTML = `
+        <div class="table-wrapper">
+          <table>
+            <thead><tr>
+              <th>Date &amp; Time</th><th>Session Type</th><th>Status</th>
+              <th>Join</th><th>Actions</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    function renderCalendar() {
+      const container = document.getElementById('calendarContainer');
+      if (calInstance) {
+        calInstance.update(allBookings);
+      } else {
+        calInstance = new BookingCalendar(container, allBookings, (date, dayBk) => {
+          const detail  = document.getElementById('calDayDetail');
+          const header  = document.getElementById('calDayDetailHeader');
+          const body    = document.getElementById('calDayDetailBody');
+          header.textContent = date.toLocaleDateString(undefined, { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+          body.innerHTML = dayBk.map(b => `
+            <div class="flex items-center gap-3 mb-2">
+              <span class="badge badge-${b.status}">${b.status}</span>
+              <span>${formatDate(b.start_time)}</span>
+              <span class="text-muted text-sm">${b.event_type || ''}</span>
+              ${b.join_url ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">🔗 Join</a>` : ''}
+            </div>`).join('');
+          detail.classList.remove('hidden');
+        });
+      }
+    }
+
+    // ── Cal.com booking embeds ────────────────────────────────────────
+    let calEmbedInitialised = false;
+
+    function initCalEmbeds() {
+      if (calEmbedInitialised) return;
+      calEmbedInitialised = true;
+
+      const prefillConfig = { email: user.email, name: displayName };
+
+      ['60min', '90min', '120min'].forEach(dur => {
+        Cal('init', dur, { origin: 'https://cal.com' });
+        Cal.ns[dur]('inline', {
+          elementOrSelector: `#cal-inline-${dur}`,
+          calLink:           `${CAL_USERNAME}/${dur}`,
+          config:             prefillConfig,
+        });
+        Cal.ns[dur]('ui', {
+          styles:               { branding: { brandColor: '#4f46e5' } },
+          hideEventTypeDetails: false,
+          layout:               'month_view',
+        });
+      });
+
+      // Show prefill notice
+      const notice = document.getElementById('bookingEmailNotice');
+      notice.textContent = `📧 Your email (${user.email}) will be pre-filled. Please confirm it matches your account email when booking.`;
+      notice.classList.remove('hidden');
+    }
+
+    // Cal.com duration tab switching
+    document.querySelectorAll('.cal-tabs .btn[data-duration]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.cal-tabs .btn').forEach(b => {
+          b.className = 'btn btn-outline';
+        });
+        btn.className = 'btn btn-primary active-cal-btn';
+        const dur = btn.dataset.duration;
+        document.querySelectorAll('.cal-embed-wrapper').forEach(w => w.classList.remove('active'));
+        document.getElementById(`cal-wrap-${dur}`).classList.add('active');
+        initCalEmbeds();
+      });
+    });
+
+    // Init embeds when "Book" section is first shown
+    const bookNavItem = document.querySelector('.nav-item[data-section="book"]');
+    if (bookNavItem) {
+      bookNavItem.addEventListener('click', () => { setTimeout(initCalEmbeds, 100); });
+    }
+
+    // ── Resources / File manager ──────────────────────────────────────
+    const BUCKET      = 'student-resources';
+    const ROOT_PREFIX = `students/${user.id}/`;
+    let   currentPath = ROOT_PREFIX;
+
+    /** Recursively delete all objects under a storage prefix. */
+    async function deleteStoragePrefix(prefix) {
+      const { data: items } = await supabase.storage.from(BUCKET).list(prefix, { limit: 1000 });
+      if (!items || !items.length) return;
+      const filePaths   = items.filter(i => i.id !== null).map(i => prefix + i.name);
+      const folderNames = items.filter(i => i.id === null).map(i => i.name);
+      if (filePaths.length) await supabase.storage.from(BUCKET).remove(filePaths);
+      for (const folder of folderNames) {
+        await deleteStoragePrefix(`${prefix}${folder}/`);
+      }
+    }
+
+    function pathParts(path) {
+      // Returns array of { name, path } segments for breadcrumb
+      const rel    = path.replace(ROOT_PREFIX, '');
+      const parts  = rel.split('/').filter(Boolean);
+      const crumbs = [{ name: 'My Files', path: ROOT_PREFIX }];
+      let   built  = ROOT_PREFIX;
+      parts.forEach(p => {
+        built += p + '/';
+        crumbs.push({ name: p, path: built });
+      });
+      return crumbs;
+    }
+
+    function renderBreadcrumb(path) {
+      const nav    = document.getElementById('breadcrumbNav');
+      const parts  = pathParts(path);
+      nav.innerHTML = parts.map((c, i) => {
+        const isLast = i === parts.length - 1;
+        return `${i > 0 ? '<span class="breadcrumb-sep">›</span>' : ''}
+          <span class="breadcrumb-item ${isLast ? 'last' : ''}" data-path="${c.path}">${c.name}</span>`;
+      }).join('');
+      nav.querySelectorAll('.breadcrumb-item:not(.last)').forEach(el => {
+        el.addEventListener('click', () => loadFiles(el.dataset.path));
+      });
+    }
+
+    async function loadFiles(path) {
+      currentPath = path;
+      renderBreadcrumb(path);
+      const wrap = document.getElementById('fileListWrap');
+      wrap.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading…</div>';
+
+      const { data, error } = await supabase.storage
+        .from(BUCKET)
+        .list(path, { limit: 200, sortBy: { column: 'name', order: 'asc' } });
+
+      if (error) {
+        wrap.innerHTML = `<div class="alert alert-error m-4">${error.message}</div>`;
+        return;
+      }
+
+      const items = (data || []).filter(f => f.name !== '.keep');
+      if (!items.length) {
+        wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>This folder is empty.</p></div>';
+        return;
+      }
+
+      const rows = items.map(item => {
+        const isFolder = item.id === null; // folders have null id in Supabase Storage listing
+        const icon = isFolder ? '📁' : getFileIcon(item.name);
+        const size = isFolder ? '' : `<span class="file-item-size">${formatFileSize(item.metadata?.size)}</span>`;
+        const actions = isFolder
+          ? `<button class="btn btn-ghost btn-sm delete-file-btn" data-path="${path}${item.name}/" data-is-folder="true">🗑 Delete</button>`
+          : `
+              <button class="btn btn-outline btn-sm download-file-btn" data-path="${path}${item.name}">⬇ Download</button>
+              <button class="btn btn-ghost btn-sm delete-file-btn" data-path="${path}${item.name}">🗑 Delete</button>`;
+        return `
+          <li class="file-item">
+            <span class="file-item-icon">${icon}</span>
+            <span class="file-item-name ${isFolder ? 'folder-link' : ''}" data-path="${isFolder ? path + item.name + '/' : ''}">${item.name}</span>
+            ${size}
+            <div class="file-item-actions">${actions}</div>
+          </li>`;
+      }).join('');
+
+      wrap.innerHTML = `<ul class="file-list">${rows}</ul>`;
+
+      // Folder navigation
+      wrap.querySelectorAll('.folder-link').forEach(el => {
+        el.style.cursor = 'pointer';
+        el.style.color  = 'var(--primary)';
+        el.addEventListener('click', () => loadFiles(el.dataset.path));
+      });
+
+      // Download
+      wrap.querySelectorAll('.download-file-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const { data: blob, error } = await supabase.storage.from(BUCKET).download(btn.dataset.path);
+          if (error) { showToast(error.message, 'error'); return; }
+          const url  = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href     = url;
+          link.download = btn.dataset.path.split('/').pop();
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+      });
+
+      // Delete
+      wrap.querySelectorAll('.delete-file-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const isFolder  = btn.dataset.isFolder === 'true';
+          const confirmed = await confirmModal(
+            `Delete "${btn.dataset.path.split('/').filter(Boolean).pop()}"? This cannot be undone.`,
+            'Delete', true
+          );
+          if (!confirmed) return;
+
+          if (isFolder) {
+            // Recursively collect and delete all objects under the folder prefix
+            await deleteStoragePrefix(btn.dataset.path);
+          } else {
+            const { error } = await supabase.storage.from(BUCKET).remove([btn.dataset.path]);
+            if (error) { showToast(error.message, 'error'); return; }
+          }
+          showToast('Deleted successfully.', 'success');
+          loadFiles(currentPath);
+        });
+      });
+    }
+
+    function getFileIcon(name) {
+      const ext = name.split('.').pop().toLowerCase();
+      const map = { pdf:'📄', doc:'📝', docx:'📝', xls:'📊', xlsx:'📊', ppt:'📋', pptx:'📋',
+                    jpg:'🖼', jpeg:'🖼', png:'🖼', gif:'🖼', mp4:'🎬', mp3:'🎵', zip:'🗜', rar:'🗜' };
+      return map[ext] || '📄';
+    }
+
+    // Upload
+    document.getElementById('fileUpload').addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      if (!files.length) return;
+      for (const file of files) {
+        const path = `${currentPath}${file.name}`;
+        const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
+        if (error) { showToast(`Error uploading ${file.name}: ${error.message}`, 'error'); }
+        else        { showToast(`Uploaded ${file.name}`, 'success'); }
+      }
+      e.target.value = '';
+      loadFiles(currentPath);
+    });
+
+    // New folder
+    document.getElementById('newFolderBtn').addEventListener('click', async () => {
+      const name = prompt('Enter folder name:');
+      if (!name || !name.trim()) return;
+      const cleanName = name.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_\-]/g, '');
+      if (!cleanName || cleanName === '.' || cleanName === '..') {
+        showToast('Invalid folder name.', 'error'); return;
+      }
+      const placeholderPath = `${currentPath}${cleanName}/.keep`;
+      const emptyBlob = new Blob([''], { type: 'text/plain' });
+      const { error } = await supabase.storage.from(BUCKET).upload(placeholderPath, emptyBlob);
+      if (error) { showToast(error.message, 'error'); return; }
+      showToast(`Folder "${cleanName}" created.`, 'success');
+      loadFiles(currentPath);
+    });
+
+    // ── Overview ──────────────────────────────────────────────────────
+    async function loadOverview() {
+      // Load bookings for stats (if not already loaded)
+      if (!allBookings.length) {
+        const { data } = await supabase
+          .from('bookings').select('*').eq('user_id', user.id).order('start_time');
+        allBookings = data || [];
+      }
+      const now      = new Date();
+      const upcoming = allBookings.filter(b => new Date(b.start_time) >= now && b.status !== 'cancelled');
+      const past     = allBookings.filter(b => new Date(b.start_time) < now);
+
+      document.getElementById('statUpcoming').textContent = upcoming.length;
+      document.getElementById('statPast').textContent     = past.length;
+
+      // File count
+      const { data: files } = await supabase.storage.from(BUCKET).list(ROOT_PREFIX, { limit: 1000 });
+      document.getElementById('statFiles').textContent = (files || []).filter(f => f.name !== '.keep').length;
+
+      // Next session card
+      const nextCard = document.getElementById('nextSessionCard');
+      const next     = upcoming[0];
+      if (next) {
+        const joinBtn = next.join_url
+          ? `<a href="${next.join_url}" target="_blank" rel="noopener" class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.4)">🔗 Join Session</a>`
+          : '';
+        nextCard.innerHTML = `
+          <div class="next-session">
+            <h2>Next Session</h2>
+            <div class="time">${formatDate(next.start_time)}</div>
+            <div class="flex gap-2">${joinBtn}
+              ${next.reschedule_url ? `<a href="${next.reschedule_url}" target="_blank" rel="noopener" class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.4)">Reschedule</a>` : ''}
+            </div>
+          </div>`;
+      } else {
+        nextCard.innerHTML = `
+          <div class="card mb-4">
+            <div class="card-body" style="text-align:center;padding:2rem;color:var(--text-muted)">
+              <div style="font-size:2rem;margin-bottom:.5rem">📅</div>
+              <p>No upcoming sessions. <a href="#" class="nav-link-book">Book one now!</a></p>
+            </div>
+          </div>`;
+        nextCard.querySelector('.nav-link-book')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          document.querySelector('.nav-item[data-section="book"]').click();
+        });
+      }
+    }
+
+    // ── Account settings ──────────────────────────────────────────────
+    const changePwdForm = document.getElementById('changePwdForm');
+    const pwdAlert      = document.getElementById('pwdAlert');
+    const changePwdBtn  = document.getElementById('changePwdBtn');
+
+    function showPwdAlert(msg, type = 'error') {
+      pwdAlert.textContent = msg;
+      pwdAlert.className = `alert alert-${type}`;
+    }
+
+    changePwdForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const newPwd     = document.getElementById('newPwd').value;
+      const confirmPwd = document.getElementById('confirmPwd').value;
+      if (newPwd.length < 8) { showPwdAlert('Password must be at least 8 characters.'); return; }
+      if (newPwd !== confirmPwd) { showPwdAlert('Passwords do not match.'); return; }
+
+      changePwdBtn.disabled = true;
+      changePwdBtn.innerHTML = '<span class="spinner"></span> Updating…';
+
+      const { error } = await supabase.auth.updateUser({ password: newPwd });
+      if (error) {
+        showPwdAlert(error.message);
+        changePwdBtn.disabled = false;
+        changePwdBtn.textContent = 'Update Password';
+        return;
+      }
+      showPwdAlert('✅ Password updated successfully.', 'success');
+      changePwdForm.reset();
+      changePwdBtn.disabled = false;
+      changePwdBtn.textContent = 'Update Password';
+    });
+
+    document.getElementById('deleteAccountBtn').addEventListener('click', async () => {
+      const confirmed = await confirmModal(
+        'This will permanently delete your account, all bookings, and all your files. This cannot be undone.',
+        'Delete My Account',
+        true
+      );
+      if (!confirmed) return;
+
+      // Double-confirm by typing DELETE
+      const typed = prompt('Type DELETE to confirm:');
+      if (typed !== 'DELETE') { showToast('Account deletion cancelled.', 'info'); return; }
+
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const token = currentSession?.access_token;
+
+      const res = await fetch('/api/delete-account', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        showToast(body.error || 'Failed to delete account.', 'error');
+        return;
+      }
+
+      await supabase.auth.signOut();
+      window.location.href = '/index.html';
+    });
+
+    // ── Init ──────────────────────────────────────────────────────────
+    await loadOverview();
+  </script>
+</body>
+</html>

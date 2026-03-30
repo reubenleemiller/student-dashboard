@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard – RM Tutoring</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <div id="toast-container" class="toast-container"></div>
+
+  <div class="app-layout">
+    <!-- ── Sidebar ── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h2>RM Tutoring</h2>
+        <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle menu">☰</button>
+      </div>
+      <nav class="sidebar-nav" role="navigation">
+        <a class="nav-item active" data-section="students" href="#">
+          <span class="nav-icon">👥</span> Students
+        </a>
+        <a class="nav-item" data-section="bookings" href="#">
+          <span class="nav-icon">📋</span> All Bookings
+        </a>
+        <a class="nav-item" data-section="storage" href="#">
+          <span class="nav-icon">📁</span> Storage Browser
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info" id="userInfo"></div>
+        <span class="badge badge-admin" style="margin-bottom:.5rem;display:inline-block">Admin</span>
+        <br/>
+        <button class="btn btn-ghost btn-sm btn-block mt-2" id="logoutBtn">Logout</button>
+      </div>
+    </aside>
+
+    <!-- ── Main content ── -->
+    <main class="main-content">
+      <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu">☰ Menu</button>
+
+      <!-- ── STUDENTS ────────────────────────────────────────────────── -->
+      <section id="section-students" class="section active">
+        <div class="page-header">
+          <div><h1>Students</h1><p>All registered student accounts.</p></div>
+        </div>
+        <div class="search-bar">
+          <input id="studentSearch" type="search" class="form-input" placeholder="Search by name or email…" />
+        </div>
+        <div class="card">
+          <div id="studentsTableWrap">
+            <div class="loading-state"><span class="spinner"></span> Loading…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── ALL BOOKINGS ───────────────────────────────────────────── -->
+      <section id="section-bookings" class="section">
+        <div class="page-header">
+          <div>
+            <h1 id="bookingsTitle">All Bookings</h1>
+            <p id="bookingsSubtitle">Showing all student bookings.</p>
+          </div>
+          <div id="bookingsBack" class="hidden">
+            <button class="btn btn-ghost btn-sm" id="backToStudentsBtn">&larr; Back to Students</button>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button class="tab-btn active" data-filter="all">All</button>
+          <button class="tab-btn"        data-filter="upcoming">Upcoming</button>
+          <button class="tab-btn"        data-filter="past">Past</button>
+        </div>
+
+        <div class="card">
+          <div id="allBookingsTableWrap">
+            <div class="loading-state"><span class="spinner"></span> Loading…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── STORAGE BROWSER ────────────────────────────────────────── -->
+      <section id="section-storage" class="section">
+        <div class="page-header">
+          <div>
+            <h1>Storage Browser</h1>
+            <p>Browse and manage any student's file storage.</p>
+          </div>
+        </div>
+
+        <!-- Student selector -->
+        <div class="card mb-4">
+          <div class="card-body">
+            <label class="bold text-sm" for="storageStudentSelect">Select student folder to browse:</label>
+            <div class="flex gap-2 mt-2" style="max-width:480px;flex-wrap:wrap">
+              <select id="storageStudentSelect" class="form-input" style="flex:1">
+                <option value="">– Choose a student –</option>
+              </select>
+              <button class="btn btn-primary btn-sm" id="browseStorageBtn">Browse</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="storagePanel" class="hidden">
+          <div class="page-header" style="margin-bottom:.5rem">
+            <div>
+              <nav aria-label="File path" id="adminBreadcrumb" class="breadcrumb"></nav>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn btn-outline btn-sm" id="adminNewFolderBtn">📁 New Folder</button>
+              <label class="btn btn-primary btn-sm" for="adminFileUpload" style="cursor:pointer">
+                ⬆ Upload
+                <input type="file" id="adminFileUpload" class="hidden" multiple />
+              </label>
+            </div>
+          </div>
+          <div class="card">
+            <div id="adminFileListWrap">
+              <div class="loading-state"><span class="spinner"></span> Loading…</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module">
+    import { supabase }                                     from '/js/supabase-client.js';
+    import { requireAdmin, showToast, confirmModal,
+             formatDate, formatFileSize }                   from '/js/auth.js';
+
+    // ── Auth guard ─────────────────────────────────────────────────────
+    const session = await requireAdmin();
+    if (!session) throw new Error('Not admin');
+    const adminUser = session.user;
+    document.getElementById('userInfo').textContent = adminUser.email;
+
+    // ── Logout ──────────────────────────────────────────────────────────
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await supabase.auth.signOut();
+      window.location.href = '/login.html';
+    });
+
+    // ── Sidebar navigation ─────────────────────────────────────────────
+    const sidebar       = document.getElementById('sidebar');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+
+    function toggleSidebar() { sidebar.classList.toggle('open'); }
+    sidebarToggle.addEventListener('click', toggleSidebar);
+    mobileMenuBtn.addEventListener('click', toggleSidebar);
+
+    function showSection(sec) {
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.querySelector(`.nav-item[data-section="${sec}"]`)?.classList.add('active');
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      document.getElementById(`section-${sec}`)?.classList.add('active');
+      if (window.innerWidth <= 768) sidebar.classList.remove('open');
+    }
+
+    document.querySelectorAll('.nav-item[data-section]').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        const sec = item.dataset.section;
+        showSection(sec);
+        if (sec === 'students') loadStudents();
+        if (sec === 'bookings') { currentStudentId = null; loadAllBookings(); }
+        if (sec === 'storage')  loadStorageStudentList();
+      });
+    });
+
+    // ── Students ───────────────────────────────────────────────────────
+    let allStudents = [];
+
+    async function loadStudents() {
+      const wrap = document.getElementById('studentsTableWrap');
+      wrap.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading…</div>';
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        wrap.innerHTML = `<div class="alert alert-error m-4">${error.message}</div>`;
+        return;
+      }
+
+      allStudents = (data || []).filter(p => p.email !== adminUser.email);
+      renderStudentsTable(allStudents);
+    }
+
+    function renderStudentsTable(students) {
+      const wrap = document.getElementById('studentsTableWrap');
+      if (!students.length) {
+        wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><p>No students found.</p></div>';
+        return;
+      }
+
+      const rows = students.map(s => `
+        <tr>
+          <td>${s.full_name || '–'}</td>
+          <td>${s.email}</td>
+          <td><span class="badge badge-${s.role}">${s.role}</span></td>
+          <td>${new Date(s.created_at).toLocaleDateString()}</td>
+          <td class="flex gap-2">
+            <button class="btn btn-outline btn-sm view-bookings-btn" data-id="${s.id}" data-email="${s.email}" data-name="${s.full_name || s.email}">View Bookings</button>
+            <button class="btn btn-ghost   btn-sm view-storage-btn"  data-id="${s.id}" data-email="${s.email}" data-name="${s.full_name || s.email}">Browse Files</button>
+          </td>
+        </tr>`).join('');
+
+      wrap.innerHTML = `
+        <div class="table-wrapper">
+          <table>
+            <thead><tr>
+              <th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th>Actions</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+
+      wrap.querySelectorAll('.view-bookings-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentStudentId    = btn.dataset.id;
+          currentStudentName  = btn.dataset.name;
+          loadAllBookings(btn.dataset.id, btn.dataset.name);
+          showSection('bookings');
+        });
+      });
+
+      wrap.querySelectorAll('.view-storage-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          showSection('storage');
+          loadStorageStudentList();
+          // Pre-select the student
+          setTimeout(() => {
+            const sel = document.getElementById('storageStudentSelect');
+            const opt = Array.from(sel.options).find(o => o.value === btn.dataset.id);
+            if (opt) { sel.value = btn.dataset.id; browseStudentStorage(btn.dataset.id, btn.dataset.name); }
+          }, 300);
+        });
+      });
+    }
+
+    // Student search
+    document.getElementById('studentSearch').addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase();
+      const filtered = allStudents.filter(s =>
+        (s.full_name || '').toLowerCase().includes(q) ||
+        s.email.toLowerCase().includes(q)
+      );
+      renderStudentsTable(filtered);
+    });
+
+    // ── Bookings ───────────────────────────────────────────────────────
+    let currentStudentId   = null;
+    let currentStudentName = null;
+    let allBookings        = [];
+    let bookingsFilter     = 'all';
+
+    document.querySelectorAll('.tab-btn[data-filter]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn[data-filter]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        bookingsFilter = btn.dataset.filter;
+        renderBookingsTable();
+      });
+    });
+
+    document.getElementById('backToStudentsBtn').addEventListener('click', () => {
+      showSection('students');
+    });
+
+    async function loadAllBookings(studentId = null, studentName = null) {
+      currentStudentId   = studentId;
+      currentStudentName = studentName;
+
+      // Update header
+      if (studentId) {
+        document.getElementById('bookingsTitle').textContent = `Bookings – ${studentName}`;
+        document.getElementById('bookingsSubtitle').textContent = `Showing bookings for this student.`;
+        document.getElementById('bookingsBack').classList.remove('hidden');
+      } else {
+        document.getElementById('bookingsTitle').textContent = 'All Bookings';
+        document.getElementById('bookingsSubtitle').textContent = 'Showing all student bookings.';
+        document.getElementById('bookingsBack').classList.add('hidden');
+      }
+
+      const wrap = document.getElementById('allBookingsTableWrap');
+      wrap.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading…</div>';
+
+      let query = supabase.from('bookings').select(`*, profiles:user_id(full_name, email)`).order('start_time', { ascending: false });
+      if (studentId) query = query.eq('user_id', studentId);
+
+      const { data, error } = await query;
+      if (error) {
+        wrap.innerHTML = `<div class="alert alert-error m-4">${error.message}</div>`;
+        return;
+      }
+      allBookings = data || [];
+      renderBookingsTable();
+    }
+
+    function renderBookingsTable() {
+      const now    = new Date();
+      let subset   = allBookings;
+      if (bookingsFilter === 'upcoming') subset = allBookings.filter(b => new Date(b.start_time) >= now);
+      if (bookingsFilter === 'past')     subset = allBookings.filter(b => new Date(b.start_time) < now);
+
+      const wrap = document.getElementById('allBookingsTableWrap');
+      if (!subset.length) {
+        wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>No bookings found.</p></div>';
+        return;
+      }
+
+      const rows = subset.map(b => {
+        const studentName = b.profiles?.full_name || b.profiles?.email || b.user_email || '–';
+        const badge       = `<span class="badge badge-${b.status}">${b.status}</span>`;
+        const join        = b.join_url
+          ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">🔗 Join</a>`
+          : '<span class="text-muted">–</span>';
+        const cancel = b.cancel_url
+          ? `<a href="${b.cancel_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Cancel</a>`
+          : '';
+        const reschedule = b.reschedule_url
+          ? `<a href="${b.reschedule_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Reschedule</a>`
+          : '';
+        return `
+          <tr>
+            <td>${studentName}</td>
+            <td>${formatDate(b.start_time)}</td>
+            <td>${b.event_type || '–'}</td>
+            <td>${badge}</td>
+            <td>${join}</td>
+            <td class="flex gap-2" style="flex-wrap:wrap">${cancel}${reschedule}</td>
+          </tr>`;
+      }).join('');
+
+      wrap.innerHTML = `
+        <div class="table-wrapper">
+          <table>
+            <thead><tr>
+              <th>Student</th><th>Date &amp; Time</th><th>Type</th>
+              <th>Status</th><th>Join</th><th>Actions</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    // ── Storage browser ────────────────────────────────────────────────
+    const BUCKET = 'student-resources';
+    let   adminCurrentPath   = '';
+    let   adminCurrentUserId = '';
+
+    async function loadStorageStudentList() {
+      const sel = document.getElementById('storageStudentSelect');
+      // Only reload if empty
+      if (sel.options.length > 1) return;
+
+      const { data } = await supabase.from('profiles').select('id, email, full_name').neq('email', adminUser.email);
+      (data || []).forEach(p => {
+        const opt   = document.createElement('option');
+        opt.value   = p.id;
+        opt.textContent = p.full_name ? `${p.full_name} (${p.email})` : p.email;
+        sel.appendChild(opt);
+      });
+    }
+
+    document.getElementById('browseStorageBtn').addEventListener('click', () => {
+      const sel  = document.getElementById('storageStudentSelect');
+      const id   = sel.value;
+      const name = sel.options[sel.selectedIndex]?.text || '';
+      if (!id) { showToast('Please select a student first.', 'info'); return; }
+      browseStudentStorage(id, name);
+    });
+
+    function browseStudentStorage(userId, userName) {
+      adminCurrentUserId = userId;
+      const rootPath     = `students/${userId}/`;
+      adminCurrentPath   = rootPath;
+      document.getElementById('storagePanel').classList.remove('hidden');
+      adminLoadFiles(rootPath, userId);
+    }
+
+    /** Recursively delete all objects under a storage prefix (admin). */
+    async function adminDeleteStoragePrefix(prefix) {
+      const { data: items } = await supabase.storage.from(BUCKET).list(prefix, { limit: 1000 });
+      if (!items || !items.length) return;
+      const filePaths   = items.filter(i => i.id !== null).map(i => prefix + i.name);
+      const folderNames = items.filter(i => i.id === null).map(i => i.name);
+      if (filePaths.length) await supabase.storage.from(BUCKET).remove(filePaths);
+      for (const folder of folderNames) {
+        await adminDeleteStoragePrefix(`${prefix}${folder}/`);
+      }
+    }
+
+    function adminPathParts(path) {
+      const rootPrefix = `students/${adminCurrentUserId}/`;
+      const rel    = path.replace(rootPrefix, '');
+      const parts  = rel.split('/').filter(Boolean);
+      const crumbs = [{ name: 'Root', path: rootPrefix }];
+      let   built  = rootPrefix;
+      parts.forEach(p => { built += p + '/'; crumbs.push({ name: p, path: built }); });
+      return crumbs;
+    }
+
+    function renderAdminBreadcrumb(path) {
+      const nav   = document.getElementById('adminBreadcrumb');
+      const parts = adminPathParts(path);
+      nav.innerHTML = parts.map((c, i) => {
+        const isLast = i === parts.length - 1;
+        return `${i > 0 ? '<span class="breadcrumb-sep">›</span>' : ''}
+          <span class="breadcrumb-item ${isLast ? 'last' : ''}" data-path="${c.path}">${c.name}</span>`;
+      }).join('');
+      nav.querySelectorAll('.breadcrumb-item:not(.last)').forEach(el => {
+        el.addEventListener('click', () => adminLoadFiles(el.dataset.path, adminCurrentUserId));
+      });
+    }
+
+    async function adminLoadFiles(path, userId) {
+      adminCurrentPath = path;
+      renderAdminBreadcrumb(path);
+      const wrap = document.getElementById('adminFileListWrap');
+      wrap.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading…</div>';
+
+      const { data, error } = await supabase.storage.from(BUCKET).list(path, { limit: 200, sortBy: { column: 'name', order: 'asc' } });
+      if (error) { wrap.innerHTML = `<div class="alert alert-error m-4">${error.message}</div>`; return; }
+
+      const items = (data || []).filter(f => f.name !== '.keep');
+      if (!items.length) {
+        wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>This folder is empty.</p></div>';
+        return;
+      }
+
+      const rows = items.map(item => {
+        const isFolder = item.id === null;
+        const icon     = isFolder ? '📁' : getFileIcon(item.name);
+        const size     = isFolder ? '' : `<span class="file-item-size">${formatFileSize(item.metadata?.size)}</span>`;
+        const actions  = isFolder
+          ? `<button class="btn btn-ghost btn-sm admin-delete-btn" data-path="${path}${item.name}/" data-folder="true">🗑 Delete</button>`
+          : `<button class="btn btn-outline btn-sm admin-download-btn" data-path="${path}${item.name}">⬇ Download</button>
+             <button class="btn btn-ghost   btn-sm admin-delete-btn"   data-path="${path}${item.name}">🗑 Delete</button>`;
+        return `
+          <li class="file-item">
+            <span class="file-item-icon">${icon}</span>
+            <span class="file-item-name ${isFolder ? 'folder-link' : ''}" data-path="${isFolder ? path + item.name + '/' : ''}">${item.name}</span>
+            ${size}
+            <div class="file-item-actions">${actions}</div>
+          </li>`;
+      }).join('');
+
+      wrap.innerHTML = `<ul class="file-list">${rows}</ul>`;
+
+      wrap.querySelectorAll('.folder-link').forEach(el => {
+        el.style.cursor = 'pointer'; el.style.color = 'var(--primary)';
+        el.addEventListener('click', () => adminLoadFiles(el.dataset.path, userId));
+      });
+      wrap.querySelectorAll('.admin-download-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const { data: blob, error } = await supabase.storage.from(BUCKET).download(btn.dataset.path);
+          if (error) { showToast(error.message, 'error'); return; }
+          const url  = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url; link.download = btn.dataset.path.split('/').pop(); link.click();
+          URL.revokeObjectURL(url);
+        });
+      });
+      wrap.querySelectorAll('.admin-delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const confirmed = await confirmModal(`Delete "${btn.dataset.path.split('/').filter(Boolean).pop()}"?`, 'Delete', true);
+          if (!confirmed) return;
+          if (btn.dataset.folder === 'true') {
+            await adminDeleteStoragePrefix(btn.dataset.path);
+          } else {
+            await supabase.storage.from(BUCKET).remove([btn.dataset.path]);
+          }
+          showToast('Deleted.', 'success');
+          adminLoadFiles(adminCurrentPath, userId);
+        });
+      });
+    }
+
+    // Admin upload
+    document.getElementById('adminFileUpload').addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      for (const file of files) {
+        const { error } = await supabase.storage.from(BUCKET).upload(`${adminCurrentPath}${file.name}`, file, { upsert: true });
+        if (error) showToast(`Error: ${error.message}`, 'error');
+        else       showToast(`Uploaded ${file.name}`, 'success');
+      }
+      e.target.value = '';
+      adminLoadFiles(adminCurrentPath, adminCurrentUserId);
+    });
+
+    // Admin new folder
+    document.getElementById('adminNewFolderBtn').addEventListener('click', async () => {
+      const name = prompt('Folder name:');
+      if (!name?.trim()) return;
+      const clean = name.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_\-]/g, '');
+      if (!clean || clean === '.' || clean === '..') { showToast('Invalid folder name.', 'error'); return; }
+      const emptyBlob = new Blob([''], { type: 'text/plain' });
+      const { error } = await supabase.storage.from(BUCKET).upload(`${adminCurrentPath}${clean}/.keep`, emptyBlob);
+      if (error) { showToast(error.message, 'error'); return; }
+      showToast(`Folder "${clean}" created.`, 'success');
+      adminLoadFiles(adminCurrentPath, adminCurrentUserId);
+    });
+
+    function getFileIcon(name) {
+      const ext = name.split('.').pop().toLowerCase();
+      const map = { pdf:'📄', doc:'📝', docx:'📝', xls:'📊', xlsx:'📊', ppt:'📋', pptx:'📋',
+                    jpg:'🖼', jpeg:'🖼', png:'🖼', gif:'🖼', mp4:'🎬', mp3:'🎵', zip:'🗜', rar:'🗜' };
+      return map[ext] || '📄';
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────
+    await loadStudents();
+  </script>
+</body>
+</html>

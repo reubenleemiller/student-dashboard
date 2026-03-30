@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create Account – RM Tutoring</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body class="auth-page">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <h1>RM Tutoring</h1>
+      <p>Create your student account</p>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div id="alert" class="alert hidden"></div>
+
+        <form id="signupForm" novalidate>
+          <div class="form-group">
+            <label for="fullName">Full name</label>
+            <input id="fullName" type="text" class="form-input" placeholder="Your name" required autocomplete="name" />
+          </div>
+          <div class="form-group">
+            <label for="email">Email address</label>
+            <input id="email" type="email" class="form-input" placeholder="you@example.com" required autocomplete="email" />
+            <span class="form-hint">Use the same email you book sessions with.</span>
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input id="password" type="password" class="form-input" placeholder="At least 8 characters" required autocomplete="new-password" minlength="8" />
+          </div>
+          <div class="form-group">
+            <label for="confirmPassword">Confirm password</label>
+            <input id="confirmPassword" type="password" class="form-input" placeholder="Repeat password" required autocomplete="new-password" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-block btn-lg" id="submitBtn">
+            Create Account
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="auth-links">
+      Already have an account? <a href="/login.html">Sign in</a>
+    </div>
+  </div>
+
+  <script type="module">
+    import { supabase }       from '/js/supabase-client.js';
+    import { requireNotAuth } from '/js/auth.js';
+
+    await requireNotAuth();
+
+    const form      = document.getElementById('signupForm');
+    const alertBox  = document.getElementById('alert');
+    const submitBtn = document.getElementById('submitBtn');
+
+    function showAlert(msg, type = 'error') {
+      alertBox.textContent = msg;
+      alertBox.className = `alert alert-${type}`;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const fullName        = document.getElementById('fullName').value.trim();
+      const email           = document.getElementById('email').value.trim();
+      const password        = document.getElementById('password').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+
+      if (!fullName || !email || !password) {
+        showAlert('Please fill in all fields.');
+        return;
+      }
+      if (password.length < 8) {
+        showAlert('Password must be at least 8 characters.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        showAlert('Passwords do not match.');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner"></span> Creating account…';
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: fullName } },
+      });
+
+      if (error) {
+        showAlert(error.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create Account';
+        return;
+      }
+
+      // Update profile with full name (best-effort; the trigger sets it on creation)
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ full_name: fullName })
+          .eq('id', data.user.id);
+        // Non-fatal: profile may not exist yet if email confirmation is pending
+        if (profileError) console.warn('Profile update deferred:', profileError.message);
+      }
+
+      showAlert(
+        '✅ Account created! Check your email to confirm your address, then sign in.',
+        'success'
+      );
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create Account';
+      form.reset();
+    });
+  </script>
+</body>
+</html>

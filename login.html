@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In – RM Tutoring</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body class="auth-page">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <h1>RM Tutoring</h1>
+      <p>Sign in to your student portal</p>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div id="alert" class="alert alert-error hidden"></div>
+
+        <form id="loginForm" novalidate>
+          <div class="form-group">
+            <label for="email">Email address</label>
+            <input id="email" type="email" class="form-input" placeholder="you@example.com" required autocomplete="email" />
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input id="password" type="password" class="form-input" placeholder="••••••••" required autocomplete="current-password" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-block btn-lg" id="submitBtn">
+            Sign In
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="auth-links">
+      <a href="/reset-password.html">Forgot your password?</a>
+      &nbsp;·&nbsp;
+      <a href="/signup.html">Create an account</a>
+    </div>
+  </div>
+
+  <script type="module">
+    import { supabase }        from '/js/supabase-client.js';
+    import { requireNotAuth }  from '/js/auth.js';
+
+    const ADMIN_EMAIL = 'reuben.miller@rmtutoringservices.com';
+
+    await requireNotAuth();
+
+    const form      = document.getElementById('loginForm');
+    const alertBox  = document.getElementById('alert');
+    const submitBtn = document.getElementById('submitBtn');
+
+    function showAlert(msg) {
+      alertBox.textContent = msg;
+      alertBox.classList.remove('hidden');
+    }
+    function hideAlert() { alertBox.classList.add('hidden'); }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAlert();
+
+      const email    = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+
+      if (!email || !password) {
+        showAlert('Please enter your email and password.');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner"></span> Signing in…';
+
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (error) {
+        showAlert(error.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Sign In';
+        return;
+      }
+
+      window.location.href = data.user.email === ADMIN_EMAIL
+        ? '/admin.html'
+        : '/dashboard.html';
+    });
+  </script>
+</body>
+</html>

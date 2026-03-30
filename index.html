@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RM Tutoring Services</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <style>
+    .landing { min-height: 100vh; display: flex; flex-direction: column; }
+    .hero {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 3rem 1rem;
+    }
+    .hero-badge {
+      display: inline-block;
+      background: var(--primary-light);
+      color: var(--primary);
+      padding: .3rem .75rem;
+      border-radius: 9999px;
+      font-size: .8rem;
+      font-weight: 600;
+      margin-bottom: 1.25rem;
+      letter-spacing: .04em;
+    }
+    .hero h1 {
+      font-size: 2.5rem;
+      line-height: 1.15;
+      margin-bottom: 1rem;
+      max-width: 600px;
+    }
+    .hero h1 span { color: var(--primary); }
+    .hero p {
+      color: var(--text-muted);
+      max-width: 480px;
+      font-size: 1rem;
+      margin-bottom: 2rem;
+    }
+    .hero-actions { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+      max-width: 960px;
+      width: 100%;
+      padding: 0 1rem 3rem;
+      margin: 0 auto;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      box-shadow: var(--shadow);
+    }
+    .feature-icon { font-size: 1.75rem; margin-bottom: .625rem; }
+    .feature-card h3 { font-size: .95rem; margin-bottom: .375rem; }
+    .feature-card p  { font-size: .8rem; color: var(--text-muted); }
+    footer {
+      text-align: center;
+      padding: 1rem;
+      font-size: .8rem;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    @media (max-width: 480px) { .hero h1 { font-size: 1.75rem; } }
+  </style>
+</head>
+<body>
+  <div class="landing">
+    <div class="hero">
+      <span class="hero-badge">Student Portal</span>
+      <h1>Welcome to <span>RM Tutoring</span><br/>Services</h1>
+      <p>Manage your tutoring sessions, resources, and schedule—all in one place.</p>
+      <div class="hero-actions">
+        <a href="/login.html"  class="btn btn-primary  btn-lg">Sign In</a>
+        <a href="/signup.html" class="btn btn-outline  btn-lg">Create Account</a>
+      </div>
+    </div>
+
+    <div class="features">
+      <div class="feature-card">
+        <div class="feature-icon">📅</div>
+        <h3>Book Sessions</h3>
+        <p>Choose from 60, 90 or 120-minute tutoring sessions and book directly online.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔗</div>
+        <h3>Join Links</h3>
+        <p>See all your upcoming sessions with one-click join links, reschedule and cancel options.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📁</div>
+        <h3>Resources</h3>
+        <p>Your private file folder – upload notes, download materials, and stay organised.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <h3>Secure &amp; Private</h3>
+        <p>Your data is yours. Powered by Supabase Auth with email/password and row-level security.</p>
+      </div>
+    </div>
+
+    <footer>&copy; <span id="year"></span> RM Tutoring Services. All rights reserved.</footer>
+  </div>
+
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+</body>
+</html>

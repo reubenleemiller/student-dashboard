@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Environment variables (never commit these)
+.env
+.env.local
+.env.*.local
+
+# Netlify
+.netlify/
+
+# macOS
+.DS_Store
+
+# Editor directories
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+dist/
+build/

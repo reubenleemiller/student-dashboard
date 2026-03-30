@@ -1,0 +1,30 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://app.cal.com; style-src 'self' 'unsafe-inline'; frame-src https://cal.com https://app.cal.com; connect-src 'self' https://*.supabase.co https://app.cal.com; img-src 'self' data: https:; font-src 'self' data:"
+
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+[[redirects]]
+  from = "/api/cal-webhook"
+  to = "/.netlify/functions/cal-webhook"
+  status = 200
+
+[[redirects]]
+  from = "/api/delete-account"
+  to = "/.netlify/functions/delete-account"
+  status = 200
