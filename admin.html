@@ -120,9 +120,47 @@
               <div class="loading-state"><span class="spinner"></span> Loading…</div>
             </div>
           </div>
+        <!-- Drag-and-drop upload zone -->
+          <div id="adminDropZone" class="drop-zone" role="region" aria-label="Drop files here to upload to current folder">
+            <div class="drop-icon"><i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i></div>
+            <p>Drag &amp; drop files here to upload</p>
+          </div>
+          <ul id="adminUploadProgressList" class="upload-progress-list hidden" aria-live="polite" aria-label="Upload progress"></ul>
         </div>
       </section>
     </main>
+  </div>
+
+  <!-- Folder name modal (admin) -->
+  <div id="folderNameModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="adminFolderModalTitle">
+    <div class="modal">
+      <h3 id="adminFolderModalTitle">New Folder</h3>
+      <div class="form-group mt-2">
+        <label for="folderNameInput">Folder name</label>
+        <input id="folderNameInput" type="text" class="form-input" placeholder="e.g. Homework" maxlength="64" autocomplete="off" />
+        <div id="folderNameError" class="form-error hidden"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="folderModalCancel">Cancel</button>
+        <button class="btn btn-primary" id="folderModalCreate">Create Folder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit student name modal -->
+  <div id="editNameModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="editNameModalTitle">
+    <div class="modal">
+      <h3 id="editNameModalTitle">Edit Student Name</h3>
+      <div class="form-group mt-2">
+        <label for="editNameInput">Full Name</label>
+        <input id="editNameInput" type="text" class="form-input" placeholder="Student's full name" maxlength="128" autocomplete="off" />
+        <div id="editNameError" class="form-error hidden"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="editNameCancel">Cancel</button>
+        <button class="btn btn-primary" id="editNameSave">Save</button>
+      </div>
+    </div>
   </div>
 
   <script type="module">
@@ -207,6 +245,7 @@
           <td><span class="badge badge-${s.role}">${s.role}</span></td>
           <td>${new Date(s.created_at).toLocaleDateString()}</td>
           <td class="flex gap-2">
+            <button class="btn btn-ghost   btn-sm edit-name-btn"     data-id="${s.id}" data-name="${s.full_name || ''}" title="Edit name"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
             <button class="btn btn-outline btn-sm view-bookings-btn" data-id="${s.id}" data-email="${s.email}" data-name="${s.full_name || s.email}">View Bookings</button>
             <button class="btn btn-ghost   btn-sm view-storage-btn"  data-id="${s.id}" data-email="${s.email}" data-name="${s.full_name || s.email}">Browse Files</button>
             <button class="btn btn-danger btn-sm delete-student-btn" data-id="${s.id}" data-name="${s.full_name || s.email}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>
@@ -222,6 +261,10 @@
             <tbody>${rows}</tbody>
           </table>
         </div>`;
+
+      wrap.querySelectorAll('.edit-name-btn').forEach(btn => {
+        btn.addEventListener('click', () => editStudentName(btn.dataset.id, btn.dataset.name));
+      });
 
       wrap.querySelectorAll('.view-bookings-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -259,6 +302,90 @@
       );
       renderStudentsTable(filtered);
     });
+
+    /** Edit student full name via modal. */
+    async function editStudentName(studentId, currentName) {
+      const modal    = document.getElementById('editNameModal');
+      const input    = document.getElementById('editNameInput');
+      const errEl    = document.getElementById('editNameError');
+      const cancelBtn= document.getElementById('editNameCancel');
+      const saveBtn  = document.getElementById('editNameSave');
+
+      input.value = currentName;
+      errEl.textContent = '';
+      errEl.classList.add('hidden');
+      modal.classList.remove('hidden');
+      requestAnimationFrame(() => input.focus());
+
+      await new Promise(resolve => {
+        function cleanup() {
+          modal.classList.add('hidden');
+          cancelBtn.removeEventListener('click', onCancel);
+          saveBtn.removeEventListener('click', onSave);
+          input.removeEventListener('keydown', onKey);
+          resolve();
+        }
+        function onCancel() { cleanup(); }
+        async function onSave() {
+          const newName = input.value.trim();
+          setBtnLoading(saveBtn, true, 'Saving…');
+          const { error } = await supabase.from('profiles').update({ full_name: newName || null }).eq('id', studentId);
+          setBtnLoading(saveBtn, false);
+          if (error) { errEl.textContent = error.message; errEl.classList.remove('hidden'); return; }
+          showToast('Name updated.', 'success');
+          cleanup();
+          await loadStudents();
+        }
+        function onKey(e) {
+          if (e.key === 'Escape') onCancel();
+          if (e.key === 'Enter') { e.preventDefault(); onSave(); }
+        }
+        cancelBtn.addEventListener('click', onCancel);
+        saveBtn.addEventListener('click', onSave);
+        input.addEventListener('keydown', onKey);
+        modal.addEventListener('click', e => { if (e.target === modal) onCancel(); }, { once: true });
+      });
+    }
+
+    /** Folder name modal – returns cleaned name or null if cancelled. */
+    function showFolderModal() {
+      return new Promise(resolve => {
+        const modal     = document.getElementById('folderNameModal');
+        const input     = document.getElementById('folderNameInput');
+        const errEl     = document.getElementById('folderNameError');
+        const cancelBtn = document.getElementById('folderModalCancel');
+        const createBtn = document.getElementById('folderModalCreate');
+        input.value = '';
+        errEl.textContent = '';
+        errEl.classList.add('hidden');
+        modal.classList.remove('hidden');
+        requestAnimationFrame(() => input.focus());
+
+        function cleanup(val) {
+          modal.classList.add('hidden');
+          cancelBtn.removeEventListener('click', onCancel);
+          createBtn.removeEventListener('click', onSubmit);
+          input.removeEventListener('keydown', onKey);
+          resolve(val);
+        }
+        function onCancel() { cleanup(null); }
+        function onSubmit() {
+          const raw   = input.value.trim();
+          if (!raw) { errEl.textContent = 'Please enter a folder name.'; errEl.classList.remove('hidden'); input.focus(); return; }
+          const clean = raw.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_\-]/g, '');
+          if (!clean || clean === '.' || clean === '..') { errEl.textContent = 'Invalid characters in folder name.'; errEl.classList.remove('hidden'); input.focus(); return; }
+          cleanup(clean);
+        }
+        function onKey(e) {
+          if (e.key === 'Escape') onCancel();
+          if (e.key === 'Enter')  { e.preventDefault(); onSubmit(); }
+        }
+        cancelBtn.addEventListener('click', onCancel);
+        createBtn.addEventListener('click', onSubmit);
+        input.addEventListener('keydown', onKey);
+        modal.addEventListener('click', e => { if (e.target === modal) onCancel(); }, { once: true });
+      });
+    }
 
     async function deleteStudent(userId, studentName, btn) {
       const confirmed = await confirmModal(
@@ -427,6 +554,9 @@
     const BUCKET = 'student-resources';
     let   adminCurrentPath   = '';
     let   adminCurrentUserId = '';
+    let   adminDragSrcPath   = null;
+    let   adminDragSrcName   = null;
+    let   adminDragSrcIsFolder = false;
 
     async function loadStorageStudentList() {
       const sel = document.getElementById('storageStudentSelect');
@@ -470,6 +600,47 @@
       }
     }
 
+    /** Recursively move all files under fromPrefix to toPrefix (admin). */
+    async function adminMoveStorageFolder(fromPrefix, toPrefix) {
+      const { data: items, error } = await supabase.storage.from(BUCKET).list(fromPrefix, { limit: 1000 });
+      if (error) { showToast(error.message, 'error'); return; }
+      for (const item of (items || [])) {
+        if (item.id === null) {
+          await adminMoveStorageFolder(`${fromPrefix}${item.name}/`, `${toPrefix}${item.name}/`);
+        } else {
+          const { error: mvErr } = await supabase.storage.from(BUCKET).move(`${fromPrefix}${item.name}`, `${toPrefix}${item.name}`);
+          if (mvErr) showToast(mvErr.message, 'error');
+        }
+      }
+    }
+
+    /** Load stored item order for a folder (keyed by student owner). */
+    async function adminLoadItemOrder(ownerId, folderPath) {
+      const { data } = await supabase
+        .from('storage_item_order')
+        .select('name, order_index')
+        .eq('user_id', ownerId)
+        .eq('folder_path', folderPath)
+        .order('order_index');
+      return new Map((data || []).map(r => [r.name, r.order_index]));
+    }
+
+    async function adminSaveItemOrder(ownerId, folderPath, orderedNames) {
+      await supabase.from('storage_item_order').delete()
+        .eq('user_id', ownerId).eq('folder_path', folderPath);
+      if (orderedNames.length) {
+        await supabase.from('storage_item_order').insert(
+          orderedNames.map((name, i) => ({ user_id: ownerId, folder_path: folderPath, name, order_index: i }))
+        );
+      }
+    }
+
+    function adminSortByOrder(items, orderMap) {
+      const ordered   = items.filter(i => orderMap.has(i.name)).sort((a, b) => orderMap.get(a.name) - orderMap.get(b.name));
+      const unordered = items.filter(i => !orderMap.has(i.name)).sort((a, b) => a.name.localeCompare(b.name));
+      return [...ordered, ...unordered];
+    }
+
     function adminPathParts(path) {
       const rootPrefix = `students/${adminCurrentUserId}/`;
       const rel    = path.replace(rootPrefix, '');
@@ -493,16 +664,121 @@
       });
     }
 
+    /** Attach drag-and-drop to admin file list items. */
+    function setupAdminFileDragDrop(wrap) {
+      wrap.querySelectorAll('.file-item[draggable]').forEach(li => {
+        li.addEventListener('dragstart', e => {
+          adminDragSrcPath     = li.dataset.fullpath;
+          adminDragSrcName     = li.dataset.name;
+          adminDragSrcIsFolder = li.dataset.isFolder === 'true';
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', adminDragSrcPath || '');
+          setTimeout(() => li.classList.add('dragging'), 0);
+        });
+        li.addEventListener('dragend', () => {
+          adminDragSrcPath = null;
+          li.classList.remove('dragging');
+          wrap.querySelectorAll('.file-item').forEach(el => el.classList.remove('drop-folder', 'drop-before', 'drop-after'));
+        });
+        li.addEventListener('dragover', e => {
+          if (!adminDragSrcPath || adminDragSrcPath === li.dataset.fullpath) return;
+          e.preventDefault();
+          wrap.querySelectorAll('.file-item').forEach(el => el.classList.remove('drop-folder', 'drop-before', 'drop-after'));
+          const rect = li.getBoundingClientRect();
+          const relY = (e.clientY - rect.top) / rect.height;
+          if (li.dataset.isFolder === 'true' && relY > 0.2 && relY < 0.8) {
+            li.classList.add('drop-folder');
+          } else {
+            li.classList.add(relY < 0.5 ? 'drop-before' : 'drop-after');
+          }
+          e.dataTransfer.dropEffect = 'move';
+        });
+        li.addEventListener('dragleave', () => {
+          li.classList.remove('drop-folder', 'drop-before', 'drop-after');
+        });
+        li.addEventListener('drop', async e => {
+          e.preventDefault();
+          if (!adminDragSrcPath || adminDragSrcPath === li.dataset.fullpath) return;
+          if (li.classList.contains('drop-folder')) {
+            li.classList.remove('drop-folder');
+            const name   = adminDragSrcIsFolder
+              ? adminDragSrcPath.replace(/\/$/, '').split('/').pop()
+              : adminDragSrcPath.split('/').pop();
+            const toPath = `${li.dataset.fullpath}${name}${adminDragSrcIsFolder ? '/' : ''}`;
+            if (adminDragSrcIsFolder) {
+              await adminMoveStorageFolder(adminDragSrcPath, toPath);
+            } else {
+              const { error } = await supabase.storage.from(BUCKET).move(adminDragSrcPath, toPath);
+              if (error) { showToast(error.message, 'error'); return; }
+            }
+            await supabase.from('storage_item_order').delete()
+              .eq('user_id', adminCurrentUserId).eq('folder_path', adminCurrentPath).eq('name', name);
+            showToast(`Moved "${name}" successfully.`, 'success');
+          } else {
+            const before = li.classList.contains('drop-before');
+            li.classList.remove('drop-before', 'drop-after');
+            const [orderMap, storageResult] = await Promise.all([
+              adminLoadItemOrder(adminCurrentUserId, adminCurrentPath),
+              supabase.storage.from(BUCKET).list(adminCurrentPath, { limit: 200 }),
+            ]);
+            const items  = (storageResult.data || []).filter(f => f.name !== '.keep');
+            const names  = adminSortByOrder(items, orderMap).map(i => i.name);
+            const srcIdx = names.indexOf(adminDragSrcName);
+            if (srcIdx !== -1) {
+              names.splice(srcIdx, 1);
+              const tgtIdx = names.indexOf(li.dataset.name);
+              names.splice(tgtIdx === -1 ? names.length : (before ? tgtIdx : tgtIdx + 1), 0, adminDragSrcName);
+              await adminSaveItemOrder(adminCurrentUserId, adminCurrentPath, names);
+            }
+          }
+          adminDragSrcPath = null;
+          adminLoadFiles(adminCurrentPath, adminCurrentUserId);
+        });
+      });
+    }
+
+    /** Upload admin files with per-file progress indicators. */
+    async function adminUploadFilesWithProgress(files, targetPath) {
+      const list = document.getElementById('adminUploadProgressList');
+      list.innerHTML = '';
+      list.classList.remove('hidden');
+      for (const file of files) {
+        const li = document.createElement('li');
+        li.className = 'upload-progress-item';
+        li.innerHTML = `<span class="spinner"></span><span class="up-name">${file.name}</span><span class="up-status">Uploading…</span>`;
+        list.appendChild(li);
+        const statusEl = li.querySelector('.up-status');
+        const { error } = await supabase.storage.from(BUCKET).upload(`${targetPath}${file.name}`, file, { upsert: true });
+        li.querySelector('.spinner').remove();
+        if (error) {
+          statusEl.textContent = '✗ Error';
+          statusEl.classList.add('error');
+          showToast(`Error: ${error.message}`, 'error');
+        } else {
+          statusEl.textContent = '✓ Done';
+          statusEl.classList.add('done');
+        }
+      }
+      setTimeout(() => { list.classList.add('hidden'); list.innerHTML = ''; }, 6000);
+      adminLoadFiles(adminCurrentPath, adminCurrentUserId);
+    }
+
     async function adminLoadFiles(path, userId) {
       adminCurrentPath = path;
       renderAdminBreadcrumb(path);
       const wrap = document.getElementById('adminFileListWrap');
       wrap.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading…</div>';
 
-      const { data, error } = await supabase.storage.from(BUCKET).list(path, { limit: 200, sortBy: { column: 'name', order: 'asc' } });
-      if (error) { wrap.innerHTML = `<div class="alert alert-error m-4">${error.message}</div>`; return; }
+      const [storageResult, orderMap] = await Promise.all([
+        supabase.storage.from(BUCKET).list(path, { limit: 200, sortBy: { column: 'name', order: 'asc' } }),
+        adminLoadItemOrder(userId, path),
+      ]);
 
-      const items = (data || []).filter(f => f.name !== '.keep');
+      if (storageResult.error) { wrap.innerHTML = `<div class="alert alert-error m-4">${storageResult.error.message}</div>`; return; }
+
+      let items = (storageResult.data || []).filter(f => f.name !== '.keep');
+      items = adminSortByOrder(items, orderMap);
+
       if (!items.length) {
         wrap.innerHTML = '<div class="empty-state"><div class="empty-icon"><i class="fa-solid fa-inbox" aria-hidden="true"></i></div><p>This folder is empty.</p></div>';
         return;
@@ -512,14 +788,16 @@
         const isFolder = item.id === null;
         const icon     = isFolder ? '<i class="fa-solid fa-folder" aria-hidden="true"></i>' : getFileIcon(item.name);
         const size     = isFolder ? '' : `<span class="file-item-size">${formatFileSize(item.metadata?.size)}</span>`;
+        const itemPath = isFolder ? `${path}${item.name}/` : `${path}${item.name}`;
         const actions  = isFolder
-          ? `<button class="btn btn-ghost btn-sm admin-delete-btn" data-path="${path}${item.name}/" data-folder="true"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>`
-          : `<button class="btn btn-outline btn-sm admin-download-btn" data-path="${path}${item.name}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</button>
-             <button class="btn btn-ghost   btn-sm admin-delete-btn"   data-path="${path}${item.name}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>`;
+          ? `<button class="btn btn-ghost btn-sm admin-delete-btn" data-path="${itemPath}" data-folder="true"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>`
+          : `<button class="btn btn-outline btn-sm admin-download-btn" data-path="${itemPath}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</button>
+             <button class="btn btn-ghost   btn-sm admin-delete-btn"   data-path="${itemPath}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>`;
         return `
-          <li class="file-item">
+          <li class="file-item" draggable="true" data-fullpath="${itemPath}" data-name="${item.name}" data-is-folder="${isFolder}">
+            <span class="drag-handle" aria-hidden="true"><i class="fa-solid fa-grip-vertical"></i></span>
             <span class="file-item-icon">${icon}</span>
-            <span class="file-item-name ${isFolder ? 'folder-link' : ''}" data-path="${isFolder ? path + item.name + '/' : ''}">${item.name}</span>
+            <span class="file-item-name ${isFolder ? 'folder-link' : ''}" data-path="${isFolder ? itemPath : ''}">${item.name}</span>
             ${size}
             <div class="file-item-actions">${actions}</div>
           </li>`;
@@ -543,41 +821,60 @@
       });
       wrap.querySelectorAll('.admin-delete-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
-          const confirmed = await confirmModal(`Delete "${btn.dataset.path.split('/').filter(Boolean).pop()}"?`, 'Delete', true);
+          const itemName = btn.dataset.path.split('/').filter(Boolean).pop();
+          const confirmed = await confirmModal(`Delete "${itemName}"?`, 'Delete', true);
           if (!confirmed) return;
           if (btn.dataset.folder === 'true') {
             await adminDeleteStoragePrefix(btn.dataset.path);
           } else {
             await supabase.storage.from(BUCKET).remove([btn.dataset.path]);
           }
+          // Remove from order
+          await supabase.from('storage_item_order').delete()
+            .eq('user_id', adminCurrentUserId).eq('folder_path', adminCurrentPath).eq('name', itemName);
           showToast('Deleted.', 'success');
           adminLoadFiles(adminCurrentPath, userId);
         });
       });
+
+      setupAdminFileDragDrop(wrap);
     }
 
-    // Admin upload
+    // Admin upload (standard picker)
     document.getElementById('adminFileUpload').addEventListener('change', async (e) => {
       const files = Array.from(e.target.files);
-      for (const file of files) {
-        const { error } = await supabase.storage.from(BUCKET).upload(`${adminCurrentPath}${file.name}`, file, { upsert: true });
-        if (error) showToast(`Error: ${error.message}`, 'error');
-        else       showToast(`Uploaded ${file.name}`, 'success');
-      }
+      if (!files.length) return;
+      await adminUploadFilesWithProgress(files, adminCurrentPath);
       e.target.value = '';
-      adminLoadFiles(adminCurrentPath, adminCurrentUserId);
+    });
+
+    // Admin drop zone
+    const adminDropZone = document.getElementById('adminDropZone');
+    adminDropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (!adminDragSrcPath) {
+        e.dataTransfer.dropEffect = 'copy';
+        adminDropZone.classList.add('drag-over');
+      }
+    });
+    adminDropZone.addEventListener('dragleave', e => {
+      if (!adminDropZone.contains(e.relatedTarget)) adminDropZone.classList.remove('drag-over');
+    });
+    adminDropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      adminDropZone.classList.remove('drag-over');
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length && adminCurrentPath) adminUploadFilesWithProgress(files, adminCurrentPath);
     });
 
     // Admin new folder
     document.getElementById('adminNewFolderBtn').addEventListener('click', async () => {
-      const name = prompt('Folder name:');
-      if (!name?.trim()) return;
-      const clean = name.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_\-]/g, '');
-      if (!clean || clean === '.' || clean === '..') { showToast('Invalid folder name.', 'error'); return; }
+      const cleanName = await showFolderModal();
+      if (!cleanName) return;
       const emptyBlob = new Blob([''], { type: 'text/plain' });
-      const { error } = await supabase.storage.from(BUCKET).upload(`${adminCurrentPath}${clean}/.keep`, emptyBlob);
+      const { error } = await supabase.storage.from(BUCKET).upload(`${adminCurrentPath}${cleanName}/.keep`, emptyBlob);
       if (error) { showToast(error.message, 'error'); return; }
-      showToast(`Folder "${clean}" created.`, 'success');
+      showToast(`Folder "${cleanName}" created.`, 'success');
       adminLoadFiles(adminCurrentPath, adminCurrentUserId);
     });
 

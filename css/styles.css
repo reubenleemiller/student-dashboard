@@ -555,3 +555,66 @@ tbody td { padding: .75rem; vertical-align: middle; }
   background: var(--danger-light);
 }
 .danger-zone h3 { color: var(--danger); margin-bottom: .5rem; }
+
+/* ── Drag-and-drop upload zone ──────────────────────────────────────── */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: .875rem;
+  transition: border-color .15s, background .15s;
+  margin-top: .75rem;
+  cursor: default;
+}
+.drop-zone.drag-over {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  color: var(--primary);
+}
+.drop-zone .drop-icon { font-size: 1.5rem; margin-bottom: .375rem; }
+
+/* ── Upload progress list ───────────────────────────────────────────── */
+.upload-progress-list {
+  list-style: none;
+  margin-top: .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: .375rem;
+}
+.upload-progress-item {
+  display: flex;
+  align-items: center;
+  gap: .625rem;
+  padding: .5rem .75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: .8rem;
+}
+.upload-progress-item .up-name   { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload-progress-item .up-status { flex-shrink: 0; font-size: .75rem; color: var(--text-muted); }
+.up-status.done  { color: var(--success); }
+.up-status.error { color: var(--danger); }
+
+/* ── File drag-and-drop ─────────────────────────────────────────────── */
+.drag-handle {
+  cursor: grab;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  padding: 0 .125rem;
+  opacity: 0;
+  transition: opacity .15s;
+  font-size: .85rem;
+}
+.file-item:hover .drag-handle,
+.file-item:focus-within .drag-handle { opacity: .6; }
+.file-item.dragging { opacity: .35; background: var(--bg); }
+.file-item.drop-folder {
+  outline: 2px dashed var(--primary);
+  outline-offset: -2px;
+  background: var(--primary-light);
+}
+.file-item.drop-before { box-shadow: inset 0 2px 0 var(--primary); }
+.file-item.drop-after  { box-shadow: inset 0 -2px 0 var(--primary); }

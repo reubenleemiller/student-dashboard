@@ -170,3 +170,40 @@ CREATE POLICY "Students delete own files" ON storage.objects
       OR name LIKE 'students/' || auth.uid()::text || '/%'
     )
   );
+
+-- -------------------------
+-- 6. storage_item_order table
+--    Persists user-defined drag ordering of files/folders per folder path.
+-- -------------------------
+CREATE TABLE IF NOT EXISTS public.storage_item_order (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID        NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  folder_path  TEXT        NOT NULL,
+  name         TEXT        NOT NULL,
+  order_index  INTEGER     NOT NULL DEFAULT 0,
+  is_folder    BOOLEAN     NOT NULL DEFAULT FALSE,
+  updated_at   TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, folder_path, name)
+);
+
+ALTER TABLE public.storage_item_order ENABLE ROW LEVEL SECURITY;
+
+-- Students can manage their own order entries; admin can manage all.
+CREATE POLICY "Users can manage own item order" ON public.storage_item_order
+  FOR ALL TO authenticated
+  USING (
+    user_id = auth.uid()
+    OR auth.email() = 'reuben.miller@rmtutoringservices.com'
+  )
+  WITH CHECK (
+    user_id = auth.uid()
+    OR auth.email() = 'reuben.miller@rmtutoringservices.com'
+  );
+
+-- -------------------------
+-- 7. Allow admin to update any student profile (e.g. full_name editing)
+-- -------------------------
+CREATE POLICY "Admin can update any profile" ON public.profiles
+  FOR UPDATE TO authenticated
+  USING (auth.email() = 'reuben.miller@rmtutoringservices.com')
+  WITH CHECK (auth.email() = 'reuben.miller@rmtutoringservices.com');

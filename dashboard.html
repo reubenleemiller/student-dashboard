@@ -181,11 +181,33 @@
             <div class="loading-state"><span class="spinner"></span> Loading…</div>
           </div>
         </div>
+
+        <!-- Drag-and-drop upload zone -->
+        <div id="dropZone" class="drop-zone" role="region" aria-label="Drop files here to upload to current folder">
+          <div class="drop-icon"><i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i></div>
+          <p>Drag &amp; drop files here to upload</p>
+        </div>
+        <ul id="uploadProgressList" class="upload-progress-list hidden" aria-live="polite" aria-label="Upload progress"></ul>
       </section>
 
       <!-- ── ACCOUNT ───────────────────────────────────────────────── -->
       <section id="section-account" class="section">
         <div class="page-header"><h1>Account Settings</h1></div>
+
+        <!-- Edit full name -->
+        <div class="card mb-4">
+          <div class="card-header"><h2 class="text-sm bold">Profile</h2></div>
+          <div class="card-body">
+            <div id="nameAlert" class="alert hidden"></div>
+            <form id="changeNameForm" novalidate style="max-width:400px">
+              <div class="form-group">
+                <label for="fullNameInput">Full Name</label>
+                <input id="fullNameInput" type="text" class="form-input" placeholder="Your full name" autocomplete="name" />
+              </div>
+              <button type="submit" class="btn btn-primary" id="changeNameBtn">Save Name</button>
+            </form>
+          </div>
+        </div>
 
         <!-- Change password -->
         <div class="card mb-4">
@@ -216,8 +238,23 @@
     </main>
   </div>
 
-  <!-- Cal.com embed script (loaded once) -->
-  <script>
+  <!-- Folder name modal -->
+  <div id="folderNameModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="folderModalTitle">
+    <div class="modal">
+      <h3 id="folderModalTitle">New Folder</h3>
+      <div class="form-group mt-2">
+        <label for="folderNameInput">Folder name</label>
+        <input id="folderNameInput" type="text" class="form-input" placeholder="e.g. Homework" maxlength="64" autocomplete="off" />
+        <div id="folderNameError" class="form-error hidden"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="folderModalCancel">Cancel</button>
+        <button class="btn btn-primary" id="folderModalCreate">Create Folder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cal.com embed script (loaded once) -->  <script>
     (function (C, A, L) {
       let p = function (a, ar) { a.q.push(ar); };
       let d = C.document;
@@ -257,6 +294,9 @@
     const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).single();
     const displayName = profile?.full_name || user.email.split('@')[0];
     document.getElementById('welcomeMsg').textContent = `Welcome back, ${displayName}!`;
+
+    // Pre-fill full name input
+    document.getElementById('fullNameInput').value = profile?.full_name || '';
 
     // ── Logout ────────────────────────────────────────────────────────
     document.getElementById('logoutBtn').addEventListener('click', async () => {
@@ -493,6 +533,105 @@
     const BUCKET      = 'student-resources';
     const ROOT_PREFIX = `students/${user.id}/`;
     let   currentPath = ROOT_PREFIX;
+    let   dragSrcPath = null;
+    let   dragSrcName = null;
+    let   dragSrcIsFolder = false;
+
+    /** Folder name modal – returns cleaned name or null if cancelled. */
+    function showFolderModal() {
+      return new Promise(resolve => {
+        const modal     = document.getElementById('folderNameModal');
+        const input     = document.getElementById('folderNameInput');
+        const errEl     = document.getElementById('folderNameError');
+        const cancelBtn = document.getElementById('folderModalCancel');
+        const createBtn = document.getElementById('folderModalCreate');
+        input.value = '';
+        errEl.textContent = '';
+        errEl.classList.add('hidden');
+        modal.classList.remove('hidden');
+        requestAnimationFrame(() => input.focus());
+
+        function cleanup(val) {
+          modal.classList.add('hidden');
+          cancelBtn.removeEventListener('click', onCancel);
+          createBtn.removeEventListener('click', onSubmit);
+          input.removeEventListener('keydown', onKey);
+          resolve(val);
+        }
+        function onCancel() { cleanup(null); }
+        function onSubmit() {
+          const raw   = input.value.trim();
+          if (!raw) { errEl.textContent = 'Please enter a folder name.'; errEl.classList.remove('hidden'); input.focus(); return; }
+          const clean = raw.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_\-]/g, '');
+          if (!clean || clean === '.' || clean === '..') { errEl.textContent = 'Invalid characters in folder name.'; errEl.classList.remove('hidden'); input.focus(); return; }
+          cleanup(clean);
+        }
+        function onKey(e) {
+          if (e.key === 'Escape') onCancel();
+          if (e.key === 'Enter')  { e.preventDefault(); onSubmit(); }
+        }
+        cancelBtn.addEventListener('click', onCancel);
+        createBtn.addEventListener('click', onSubmit);
+        input.addEventListener('keydown', onKey);
+        modal.addEventListener('click', e => { if (e.target === modal) onCancel(); }, { once: true });
+      });
+    }
+
+    /** Upload files with per-file progress indicators. */
+    async function uploadFilesWithProgress(files, targetPath) {
+      const list = document.getElementById('uploadProgressList');
+      list.innerHTML = '';
+      list.classList.remove('hidden');
+      for (const file of files) {
+        const li = document.createElement('li');
+        li.className = 'upload-progress-item';
+        li.innerHTML = `<span class="spinner"></span><span class="up-name">${file.name}</span><span class="up-status">Uploading…</span>`;
+        list.appendChild(li);
+        const statusEl = li.querySelector('.up-status');
+        const { error } = await supabase.storage.from(BUCKET).upload(`${targetPath}${file.name}`, file, { upsert: true });
+        li.querySelector('.spinner').remove();
+        if (error) {
+          statusEl.textContent = '✗ Error';
+          statusEl.classList.add('error');
+          showToast(`Error uploading ${file.name}: ${error.message}`, 'error');
+        } else {
+          statusEl.textContent = '✓ Done';
+          statusEl.classList.add('done');
+        }
+      }
+      setTimeout(() => { list.classList.add('hidden'); list.innerHTML = ''; }, 6000);
+      loadFiles(currentPath);
+    }
+
+    /** Load stored item order for a folder. Returns a Map(name → order_index). */
+    async function loadItemOrder(ownerId, folderPath) {
+      const { data } = await supabase
+        .from('storage_item_order')
+        .select('name, order_index')
+        .eq('user_id', ownerId)
+        .eq('folder_path', folderPath)
+        .order('order_index');
+      return new Map((data || []).map(r => [r.name, r.order_index]));
+    }
+
+    /** Persist item order for a folder (replaces existing entries). */
+    async function saveItemOrder(ownerId, folderPath, orderedNames) {
+      await supabase.from('storage_item_order').delete()
+        .eq('user_id', ownerId)
+        .eq('folder_path', folderPath);
+      if (orderedNames.length) {
+        await supabase.from('storage_item_order').insert(
+          orderedNames.map((name, i) => ({ user_id: ownerId, folder_path: folderPath, name, order_index: i }))
+        );
+      }
+    }
+
+    /** Sort storage items by persisted order, unordered items appended alphabetically. */
+    function sortByOrder(items, orderMap) {
+      const ordered   = items.filter(i => orderMap.has(i.name)).sort((a, b) => orderMap.get(a.name) - orderMap.get(b.name));
+      const unordered = items.filter(i => !orderMap.has(i.name)).sort((a, b) => a.name.localeCompare(b.name));
+      return [...ordered, ...unordered];
+    }
 
     /** Recursively delete all objects under a storage prefix. */
     async function deleteStoragePrefix(prefix) {
@@ -504,6 +643,101 @@
       for (const folder of folderNames) {
         await deleteStoragePrefix(`${prefix}${folder}/`);
       }
+    }
+
+    /** Recursively move all files under fromPrefix to toPrefix. */
+    async function moveStorageFolder(fromPrefix, toPrefix) {
+      const { data: items, error } = await supabase.storage.from(BUCKET).list(fromPrefix, { limit: 1000 });
+      if (error) { showToast(error.message, 'error'); return; }
+      for (const item of (items || [])) {
+        if (item.id === null) {
+          await moveStorageFolder(`${fromPrefix}${item.name}/`, `${toPrefix}${item.name}/`);
+        } else {
+          const { error: mvErr } = await supabase.storage.from(BUCKET).move(`${fromPrefix}${item.name}`, `${toPrefix}${item.name}`);
+          if (mvErr) showToast(mvErr.message, 'error');
+        }
+      }
+    }
+
+    /** Move an item (file or folder) into a target folder. */
+    async function handleMoveIntoFolder(fromPath, isFolder, folderPath) {
+      const name   = isFolder ? fromPath.replace(/\/$/, '').split('/').pop() : fromPath.split('/').pop();
+      const toPath = `${folderPath}${name}${isFolder ? '/' : ''}`;
+      if (isFolder) {
+        await moveStorageFolder(fromPath, toPath);
+      } else {
+        const { error } = await supabase.storage.from(BUCKET).move(fromPath, toPath);
+        if (error) { showToast(error.message, 'error'); return; }
+      }
+      // Remove from current folder's order
+      await supabase.from('storage_item_order').delete()
+        .eq('user_id', user.id).eq('folder_path', currentPath).eq('name', name);
+      showToast(`Moved "${name}" successfully.`, 'success');
+    }
+
+    /** Reorder an item relative to a target item. */
+    async function handleReorder(srcName, targetName, insertBefore) {
+      const [orderMap, storageResult] = await Promise.all([
+        loadItemOrder(user.id, currentPath),
+        supabase.storage.from(BUCKET).list(currentPath, { limit: 200 }),
+      ]);
+      const items  = (storageResult.data || []).filter(f => f.name !== '.keep');
+      const names  = sortByOrder(items, orderMap).map(i => i.name);
+      const srcIdx = names.indexOf(srcName);
+      if (srcIdx === -1) return;
+      names.splice(srcIdx, 1);
+      const tgtIdx = names.indexOf(targetName);
+      names.splice(tgtIdx === -1 ? names.length : (insertBefore ? tgtIdx : tgtIdx + 1), 0, srcName);
+      await saveItemOrder(user.id, currentPath, names);
+    }
+
+    /** Attach drag-and-drop event listeners to rendered file list items. */
+    function setupFileDragDrop(wrap) {
+      wrap.querySelectorAll('.file-item[draggable]').forEach(li => {
+        li.addEventListener('dragstart', e => {
+          dragSrcPath     = li.dataset.fullpath;
+          dragSrcName     = li.dataset.name;
+          dragSrcIsFolder = li.dataset.isFolder === 'true';
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', dragSrcPath || '');
+          setTimeout(() => li.classList.add('dragging'), 0);
+        });
+        li.addEventListener('dragend', () => {
+          dragSrcPath = null;
+          li.classList.remove('dragging');
+          wrap.querySelectorAll('.file-item').forEach(el => el.classList.remove('drop-folder', 'drop-before', 'drop-after'));
+        });
+        li.addEventListener('dragover', e => {
+          if (!dragSrcPath || dragSrcPath === li.dataset.fullpath) return;
+          e.preventDefault();
+          wrap.querySelectorAll('.file-item').forEach(el => el.classList.remove('drop-folder', 'drop-before', 'drop-after'));
+          const rect = li.getBoundingClientRect();
+          const relY = (e.clientY - rect.top) / rect.height;
+          if (li.dataset.isFolder === 'true' && relY > 0.2 && relY < 0.8) {
+            li.classList.add('drop-folder');
+          } else {
+            li.classList.add(relY < 0.5 ? 'drop-before' : 'drop-after');
+          }
+          e.dataTransfer.dropEffect = 'move';
+        });
+        li.addEventListener('dragleave', () => {
+          li.classList.remove('drop-folder', 'drop-before', 'drop-after');
+        });
+        li.addEventListener('drop', async e => {
+          e.preventDefault();
+          if (!dragSrcPath || dragSrcPath === li.dataset.fullpath) return;
+          if (li.classList.contains('drop-folder')) {
+            li.classList.remove('drop-folder');
+            await handleMoveIntoFolder(dragSrcPath, dragSrcIsFolder, li.dataset.fullpath);
+          } else {
+            const before = li.classList.contains('drop-before');
+            li.classList.remove('drop-before', 'drop-after');
+            await handleReorder(dragSrcName, li.dataset.name, before);
+          }
+          dragSrcPath = null;
+          loadFiles(currentPath);
+        });
+      });
     }
 
     function pathParts(path) {
@@ -538,34 +772,38 @@
       const wrap = document.getElementById('fileListWrap');
       wrap.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading…</div>';
 
-      const { data, error } = await supabase.storage
-        .from(BUCKET)
-        .list(path, { limit: 200, sortBy: { column: 'name', order: 'asc' } });
+      const [storageResult, orderMap] = await Promise.all([
+        supabase.storage.from(BUCKET).list(path, { limit: 200, sortBy: { column: 'name', order: 'asc' } }),
+        loadItemOrder(user.id, path),
+      ]);
 
-      if (error) {
-        wrap.innerHTML = `<div class="alert alert-error m-4">${error.message}</div>`;
+      if (storageResult.error) {
+        wrap.innerHTML = `<div class="alert alert-error m-4">${storageResult.error.message}</div>`;
         return;
       }
 
-      const items = (data || []).filter(f => f.name !== '.keep');
+      let items = (storageResult.data || []).filter(f => f.name !== '.keep');
+      items = sortByOrder(items, orderMap);
+
       if (!items.length) {
         wrap.innerHTML = '<div class="empty-state"><div class="empty-icon"><i class="fa-solid fa-inbox" aria-hidden="true"></i></div><p>This folder is empty.</p></div>';
         return;
       }
 
       const rows = items.map(item => {
-        const isFolder = item.id === null; // folders have null id in Supabase Storage listing
-        const icon = isFolder ? '<i class="fa-solid fa-folder" aria-hidden="true"></i>' : getFileIcon(item.name);
-        const size = isFolder ? '' : `<span class="file-item-size">${formatFileSize(item.metadata?.size)}</span>`;
-        const actions = isFolder
-          ? `<button class="btn btn-ghost btn-sm delete-file-btn" data-path="${path}${item.name}/" data-is-folder="true"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>`
-          : `
-              <button class="btn btn-outline btn-sm download-file-btn" data-path="${path}${item.name}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</button>
-              <button class="btn btn-ghost btn-sm delete-file-btn" data-path="${path}${item.name}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>`;
+        const isFolder  = item.id === null;
+        const icon      = isFolder ? '<i class="fa-solid fa-folder" aria-hidden="true"></i>' : getFileIcon(item.name);
+        const size      = isFolder ? '' : `<span class="file-item-size">${formatFileSize(item.metadata?.size)}</span>`;
+        const itemPath  = isFolder ? `${path}${item.name}/` : `${path}${item.name}`;
+        const actions   = isFolder
+          ? `<button class="btn btn-ghost btn-sm delete-file-btn" data-path="${itemPath}" data-is-folder="true"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>`
+          : `<button class="btn btn-outline btn-sm download-file-btn" data-path="${itemPath}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</button>
+             <button class="btn btn-ghost   btn-sm delete-file-btn"   data-path="${itemPath}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>`;
         return `
-          <li class="file-item">
+          <li class="file-item" draggable="true" data-fullpath="${itemPath}" data-name="${item.name}" data-is-folder="${isFolder}">
+            <span class="drag-handle" aria-hidden="true"><i class="fa-solid fa-grip-vertical"></i></span>
             <span class="file-item-icon">${icon}</span>
-            <span class="file-item-name ${isFolder ? 'folder-link' : ''}" data-path="${isFolder ? path + item.name + '/' : ''}">${item.name}</span>
+            <span class="file-item-name ${isFolder ? 'folder-link' : ''}" data-path="${isFolder ? itemPath : ''}">${item.name}</span>
             ${size}
             <div class="file-item-actions">${actions}</div>
           </li>`;
@@ -598,23 +836,28 @@
       wrap.querySelectorAll('.delete-file-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
           const isFolder  = btn.dataset.isFolder === 'true';
+          const itemName  = btn.dataset.path.split('/').filter(Boolean).pop();
           const confirmed = await confirmModal(
-            `Delete "${btn.dataset.path.split('/').filter(Boolean).pop()}"? This cannot be undone.`,
+            `Delete "${itemName}"? This cannot be undone.`,
             'Delete', true
           );
           if (!confirmed) return;
 
           if (isFolder) {
-            // Recursively collect and delete all objects under the folder prefix
             await deleteStoragePrefix(btn.dataset.path);
           } else {
             const { error } = await supabase.storage.from(BUCKET).remove([btn.dataset.path]);
             if (error) { showToast(error.message, 'error'); return; }
           }
+          // Remove from order table
+          await supabase.from('storage_item_order').delete()
+            .eq('user_id', user.id).eq('folder_path', currentPath).eq('name', itemName);
           showToast('Deleted successfully.', 'success');
           loadFiles(currentPath);
         });
       });
+
+      setupFileDragDrop(wrap);
     }
 
     function getFileIcon(name) {
@@ -639,28 +882,37 @@
       return map[ext] || '<i class="fa-solid fa-file" aria-hidden="true"></i>';
     }
 
-    // Upload
+    // Upload (standard file picker)
     document.getElementById('fileUpload').addEventListener('change', async (e) => {
       const files = Array.from(e.target.files);
       if (!files.length) return;
-      for (const file of files) {
-        const path = `${currentPath}${file.name}`;
-        const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
-        if (error) { showToast(`Error uploading ${file.name}: ${error.message}`, 'error'); }
-        else        { showToast(`Uploaded ${file.name}`, 'success'); }
-      }
+      await uploadFilesWithProgress(files, currentPath);
       e.target.value = '';
-      loadFiles(currentPath);
+    });
+
+    // Drop zone – drag files from desktop
+    const dropZone = document.getElementById('dropZone');
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (!dragSrcPath) { // only for external (desktop) drags
+        e.dataTransfer.dropEffect = 'copy';
+        dropZone.classList.add('drag-over');
+      }
+    });
+    dropZone.addEventListener('dragleave', e => {
+      if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove('drag-over');
+    });
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length) uploadFilesWithProgress(files, currentPath);
     });
 
     // New folder
     document.getElementById('newFolderBtn').addEventListener('click', async () => {
-      const name = prompt('Enter folder name:');
-      if (!name || !name.trim()) return;
-      const cleanName = name.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_\-]/g, '');
-      if (!cleanName || cleanName === '.' || cleanName === '..') {
-        showToast('Invalid folder name.', 'error'); return;
-      }
+      const cleanName = await showFolderModal();
+      if (!cleanName) return;
       const placeholderPath = `${currentPath}${cleanName}/.keep`;
       const emptyBlob = new Blob([''], { type: 'text/plain' });
       const { error } = await supabase.storage.from(BUCKET).upload(placeholderPath, emptyBlob);
@@ -719,6 +971,29 @@
     }
 
     // ── Account settings ──────────────────────────────────────────────
+    // Full name
+    const changeNameForm = document.getElementById('changeNameForm');
+    const nameAlert      = document.getElementById('nameAlert');
+    const changeNameBtn  = document.getElementById('changeNameBtn');
+
+    function showNameAlert(msg, type = 'error') {
+      nameAlert.textContent = msg;
+      nameAlert.className   = `alert alert-${type}`;
+    }
+
+    changeNameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const newName = document.getElementById('fullNameInput').value.trim();
+      setBtnLoading(changeNameBtn, true, 'Saving…');
+      const { error } = await supabase.from('profiles').update({ full_name: newName || null }).eq('id', user.id);
+      setBtnLoading(changeNameBtn, false);
+      if (error) { showNameAlert(error.message); return; }
+      showNameAlert('Name updated successfully.', 'success');
+      const shown = newName || user.email.split('@')[0];
+      document.getElementById('welcomeMsg').textContent = `Welcome back, ${shown}!`;
+    });
+
+    // Change password
     const changePwdForm = document.getElementById('changePwdForm');
     const pwdAlert      = document.getElementById('pwdAlert');
     const changePwdBtn  = document.getElementById('changePwdBtn');
