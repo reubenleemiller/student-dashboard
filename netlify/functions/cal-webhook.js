@@ -1,86 +1,113 @@
 // netlify/functions/cal-webhook.js
 // Receives Cal.com webhook events and upserts bookings into Supabase.
+//
 // Environment variables required:
 //   SUPABASE_URL              – your Supabase project URL
 //   SUPABASE_SERVICE_ROLE_KEY – service role key (not exposed to browser)
-//   CAL_WEBHOOK_SECRET        – (optional) webhook secret set in Cal.com dashboard
+//
+// Optional environment variables:
+//   CAL_WEBHOOK_SECRET        – if set, will accept either:
+//                                (A) HMAC signature header (x-cal-signature-256 / x-cal-signature)
+//                                    where signature is "sha256=<hex>" OR "<hex>"
+//                                (B) shared secret header (x-webhook-secret) equal to CAL_WEBHOOK_SECRET
+//
+// Notes:
+// - If CAL_WEBHOOK_SECRET is NOT set, signature verification is disabled.
+// - Cancel/reschedule URLs are normalized to https://app.cal.com/booking/<uid>?... format.
 
 const crypto = require('crypto');
 
-const SUPABASE_URL            = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE   = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const CAL_WEBHOOK_SECRET      = process.env.CAL_WEBHOOK_SECRET;
+const SUPABASE_URL          = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const CAL_WEBHOOK_SECRET    = process.env.CAL_WEBHOOK_SECRET;
 
-// Base URLs for Cal.com cancel/reschedule links (can be overridden via env var)
-const CAL_CANCEL_BASE     = process.env.CAL_CANCEL_BASE_URL     || 'https://cal.com/cancellations';
-const CAL_RESCHEDULE_BASE = process.env.CAL_RESCHEDULE_BASE_URL || 'https://cal.com/reschedule';
+if (!SUPABASE_URL) throw new Error('SUPABASE_URL environment variable is required');
+if (!SUPABASE_SERVICE_ROLE) throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is required');
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Extract HMAC signature from incoming headers.
- * Checks `x-cal-signature-256` first, then `x-cal-signature` as fallback.
- * Netlify normalises headers to lowercase, but we also do a case-insensitive
- * scan to be safe.
- */
-function getSignatureFromHeaders(headers) {
-  const candidates = ['x-cal-signature-256', 'x-cal-signature'];
-  for (const name of candidates) {
-    if (headers[name]) return headers[name];
-  }
-  // Case-insensitive scan as final fallback
-  const lowerCaseHeaders = {};
-  for (const [k, v] of Object.entries(headers)) lowerCaseHeaders[k.toLowerCase()] = v;
-  for (const name of candidates) {
-    if (lowerCaseHeaders[name]) return lowerCaseHeaders[name];
-  }
-  return null;
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
 }
 
-/**
- * Verify HMAC-SHA256 signature.
- * Accepts both "sha256=<hex>" and bare "<hex>" as the incoming signature value.
- */
-function verifyHmacSignature(rawBody, signature, secret) {
+function getHeader(event, name) {
+  if (!event?.headers) return '';
+  const lower = name.toLowerCase();
+
+  // Netlify normalizes to lowercase, but be safe:
+  return (
+    event.headers[lower] ||
+    event.headers[name] ||
+    ''
+  );
+}
+
+function normalizeCalSignature(sig) {
+  if (!sig) return '';
+  const s = String(sig).trim();
+  if (!s) return '';
+  return s.startsWith('sha256=') ? s.slice('sha256='.length) : s;
+}
+
+function computeHmacHex(rawBody, secret) {
   const hmac = crypto.createHmac('sha256', secret);
   hmac.update(rawBody, 'utf8');
-  const digest = 'sha256=' + hmac.digest('hex');
-  // Normalise incoming value to "sha256=<hex>" so both formats compare equal
-  const normalised = signature.startsWith('sha256=') ? signature : 'sha256=' + signature;
-  try {
-    return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(normalised));
-  } catch {
-    return false;
-  }
+  return hmac.digest('hex');
 }
 
-/**
- * Main authentication check.
- * 1. If CAL_WEBHOOK_SECRET is not set → bypass (open).
- * 2. If HMAC signature header is present → verify HMAC.
- * 3. If no HMAC header but x-webhook-secret header is present → compare shared secret.
- * 4. Otherwise → fail.
- */
-function verifyWebhookAuth(rawBody, headers, secret) {
-  if (!secret) return true; // verification disabled
+function verifyCalWebhook(event) {
+  // If no secret configured, verification is disabled
+  if (!CAL_WEBHOOK_SECRET) return { ok: true, mode: 'disabled' };
 
-  const hmacSig     = getSignatureFromHeaders(headers);
-  const sharedSecret = headers['x-webhook-secret'] || null;
+  const rawBody = event.body || '';
 
-  if (hmacSig) {
-    return verifyHmacSignature(rawBody, hmacSig, secret);
+  // 1) Try HMAC signature headers
+  const sigHeader =
+    getHeader(event, 'x-cal-signature-256') ||
+    getHeader(event, 'x-cal-signature');
+
+  if (sigHeader) {
+    const providedHex = normalizeCalSignature(sigHeader);
+    const expectedHex = computeHmacHex(rawBody, CAL_WEBHOOK_SECRET);
+
+    // constant-time compare when lengths match
+    const ok = providedHex.length === expectedHex.length && safeEqual(providedHex, expectedHex);
+    return { ok, mode: 'hmac', hasSignature: true };
   }
 
-  if (sharedSecret) {
-    try {
-      return crypto.timingSafeEqual(Buffer.from(sharedSecret), Buffer.from(secret));
-    } catch {
-      return false;
-    }
+  // 2) Fallback: shared secret header (useful if Cal.com is not sending HMAC header)
+  const shared = getHeader(event, 'x-webhook-secret');
+  if (shared) {
+    const ok = safeEqual(String(shared).trim(), String(CAL_WEBHOOK_SECRET).trim());
+    return { ok, mode: 'shared-secret', hasSharedSecret: true };
   }
 
-  // No recognisable auth header present
-  return false;
+  return { ok: false, mode: 'missing-auth', hasSignature: false, hasSharedSecret: false };
+}
+
+function buildCalManageUrl(uid, attendeeEmail, mode) {
+  // mode: 'cancel' | 'reschedule'
+  if (!uid) return null;
+
+  const base = `https://app.cal.com/booking/${encodeURIComponent(uid)}`;
+  const params = new URLSearchParams();
+
+  params.set('allRemainingBookings', 'false');
+  params.set('uid', uid);
+
+  if (attendeeEmail) params.set('email', attendeeEmail);
+
+  if (mode === 'cancel') {
+    params.set('cancel', 'true');
+  } else if (mode === 'reschedule') {
+    params.set('reschedule', 'true');
+  }
+
+  return `${base}?${params.toString()}`;
 }
 
 async function supabaseFetch(path, options = {}) {
@@ -88,20 +115,25 @@ async function supabaseFetch(path, options = {}) {
   const res = await fetch(url, {
     ...options,
     headers: {
-      'apikey':        SUPABASE_SERVICE_ROLE,
-      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      'Content-Type':  'application/json',
+      apikey: SUPABASE_SERVICE_ROLE,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
   });
+
   const text = await res.text();
   let data = null;
-  try { data = JSON.parse(text); } catch { data = text; }
-  if (!res.ok) throw new Error(`Supabase error ${res.status}: ${JSON.stringify(data)}`);
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+
+  if (!res.ok) {
+    throw new Error(`Supabase error ${res.status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+  }
   return data;
 }
 
 async function findUserByEmail(email) {
+  if (!email) return null;
   const rows = await supabaseFetch(
     `/profiles?email=eq.${encodeURIComponent(email)}&select=id&limit=1`
   );
@@ -110,39 +142,62 @@ async function findUserByEmail(email) {
 
 async function upsertBooking(booking) {
   await supabaseFetch('/bookings?on_conflict=cal_booking_id', {
-    method:  'POST',
-    headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-    body:    JSON.stringify(booking),
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(booking),
   });
 }
 
-// ── event handlers ────────────────────────────────────────────────────────────
+// ── event handlers ───────────────────────────────────────────────────────────
+
+function extractAttendeeEmail(payload) {
+  // Prefer first attendee email (most common Cal payload)
+  const email =
+    payload?.attendees?.[0]?.email ||
+    payload?.attendee?.email ||
+    payload?.responses?.email ||
+    '';
+
+  return String(email || '').trim().toLowerCase();
+}
+
+function extractEventType(payload) {
+  return payload?.type || payload?.eventType?.slug || payload?.eventType || null;
+}
 
 async function handleBookingCreated(payload) {
-  const attendeeEmail = (payload.attendees?.[0]?.email || '').toLowerCase();
+  const attendeeEmail = extractAttendeeEmail(payload);
   const userId = attendeeEmail ? await findUserByEmail(attendeeEmail) : null;
 
-  const uid          = payload.uid;
-  const joinUrl      = payload.videoCallData?.url
-                    || payload.metadata?.videoCallUrl
-                    || null;
-  const cancelUrl     = payload.cancelUrl
-                     || (uid ? `${CAL_CANCEL_BASE}/${uid}` : null);
-  const rescheduleUrl = payload.rescheduleUrl
-                     || (uid ? `${CAL_RESCHEDULE_BASE}/${uid}` : null);
+  const uid = payload.uid;
+
+  const joinUrl =
+    payload.videoCallData?.url ||
+    payload.metadata?.videoCallUrl ||
+    null;
+
+  const cancelUrl =
+    payload.cancelUrl ||
+    payload.metadata?.cancelUrl ||
+    buildCalManageUrl(uid, attendeeEmail, 'cancel');
+
+  const rescheduleUrl =
+    payload.rescheduleUrl ||
+    payload.metadata?.rescheduleUrl ||
+    buildCalManageUrl(uid, attendeeEmail, 'reschedule');
 
   await upsertBooking({
-    cal_booking_id:  uid,
-    user_id:         userId,
-    user_email:      attendeeEmail,
-    event_type:      payload.type || payload.eventType?.slug || null,
-    start_time:      payload.startTime,
-    end_time:        payload.endTime,
-    status:          'scheduled',
-    join_url:        joinUrl,
-    cancel_url:      cancelUrl,
-    reschedule_url:  rescheduleUrl,
-    raw_payload:     payload,
+    cal_booking_id: uid,
+    user_id: userId,
+    user_email: attendeeEmail,
+    event_type: extractEventType(payload),
+    start_time: payload.startTime,
+    end_time: payload.endTime,
+    status: 'scheduled',
+    join_url: joinUrl,
+    cancel_url: cancelUrl,
+    reschedule_url: rescheduleUrl,
+    raw_payload: payload,
   });
 }
 
@@ -150,103 +205,124 @@ async function handleBookingCancelled(payload) {
   const uid = payload.uid;
   if (!uid) return;
 
-  // Try to fetch existing row to preserve other fields
+  // Patch existing booking if it exists; otherwise store it as cancelled
   const rows = await supabaseFetch(
     `/bookings?cal_booking_id=eq.${encodeURIComponent(uid)}&select=id&limit=1`
   ).catch(() => []);
 
   if (Array.isArray(rows) && rows.length) {
     await supabaseFetch(`/bookings?cal_booking_id=eq.${encodeURIComponent(uid)}`, {
-      method:  'PATCH',
-      headers: { 'Prefer': 'return=minimal' },
-      body:    JSON.stringify({ status: 'cancelled', raw_payload: payload }),
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ status: 'cancelled', raw_payload: payload }),
     });
-  } else {
-    // Booking not in DB yet – store it anyway
-    const attendeeEmail = (payload.attendees?.[0]?.email || '').toLowerCase();
-    const userId = attendeeEmail ? await findUserByEmail(attendeeEmail) : null;
-    await upsertBooking({
-      cal_booking_id: uid,
-      user_id:        userId,
-      user_email:     attendeeEmail,
-      event_type:     payload.type || null,
-      start_time:     payload.startTime,
-      end_time:       payload.endTime,
-      status:         'cancelled',
-      raw_payload:    payload,
-    });
-  }
-}
-
-async function handleBookingRescheduled(payload) {
-  // Cal.com gives the *new* booking a new UID; the old UID is in payload.rescheduleUid
-  const newUid = payload.uid;
-  const oldUid = payload.rescheduleUid || payload.metadata?.rescheduleUid;
-
-  // Mark old booking as rescheduled
-  if (oldUid) {
-    await supabaseFetch(`/bookings?cal_booking_id=eq.${encodeURIComponent(oldUid)}`, {
-      method:  'PATCH',
-      headers: { 'Prefer': 'return=minimal' },
-      body:    JSON.stringify({ status: 'rescheduled' }),
-    }).catch(() => {});
+    return;
   }
 
-  // Insert/update new booking
-  const attendeeEmail = (payload.attendees?.[0]?.email || '').toLowerCase();
+  const attendeeEmail = extractAttendeeEmail(payload);
   const userId = attendeeEmail ? await findUserByEmail(attendeeEmail) : null;
-  const joinUrl       = payload.videoCallData?.url || payload.metadata?.videoCallUrl || null;
-  const cancelUrl     = payload.cancelUrl     || (newUid ? `${CAL_CANCEL_BASE}/${newUid}` : null);
-  const rescheduleUrl = payload.rescheduleUrl || (newUid ? `${CAL_RESCHEDULE_BASE}/${newUid}` : null);
 
   await upsertBooking({
-    cal_booking_id: newUid,
-    user_id:        userId,
-    user_email:     attendeeEmail,
-    event_type:     payload.type || payload.eventType?.slug || null,
-    start_time:     payload.startTime,
-    end_time:       payload.endTime,
-    status:         'scheduled',
-    join_url:       joinUrl,
-    cancel_url:     cancelUrl,
-    reschedule_url: rescheduleUrl,
-    raw_payload:    payload,
+    cal_booking_id: uid,
+    user_id: userId,
+    user_email: attendeeEmail,
+    event_type: extractEventType(payload),
+    start_time: payload.startTime,
+    end_time: payload.endTime,
+    status: 'cancelled',
+    join_url: payload.videoCallData?.url || payload.metadata?.videoCallUrl || null,
+    cancel_url:
+      payload.cancelUrl ||
+      payload.metadata?.cancelUrl ||
+      buildCalManageUrl(uid, attendeeEmail, 'cancel'),
+    reschedule_url:
+      payload.rescheduleUrl ||
+      payload.metadata?.rescheduleUrl ||
+      buildCalManageUrl(uid, attendeeEmail, 'reschedule'),
+    raw_payload: payload,
   });
 }
 
-// ── main handler ──────────────────────────────────────────────────────────────
+async function handleBookingRescheduled(payload) {
+  // Cal.com gives the new booking a new UID; old UID sometimes in rescheduleUid
+  const newUid = payload.uid;
+  const oldUid = payload.rescheduleUid || payload.metadata?.rescheduleUid;
+
+  // Mark old booking as rescheduled (best effort)
+  if (oldUid) {
+    await supabaseFetch(`/bookings?cal_booking_id=eq.${encodeURIComponent(oldUid)}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ status: 'rescheduled' }),
+    }).catch(() => {});
+  }
+
+  const attendeeEmail = extractAttendeeEmail(payload);
+  const userId = attendeeEmail ? await findUserByEmail(attendeeEmail) : null;
+
+  const joinUrl =
+    payload.videoCallData?.url ||
+    payload.metadata?.videoCallUrl ||
+    null;
+
+  const cancelUrl =
+    payload.cancelUrl ||
+    payload.metadata?.cancelUrl ||
+    buildCalManageUrl(newUid, attendeeEmail, 'cancel');
+
+  const rescheduleUrl =
+    payload.rescheduleUrl ||
+    payload.metadata?.rescheduleUrl ||
+    buildCalManageUrl(newUid, attendeeEmail, 'reschedule');
+
+  await upsertBooking({
+    cal_booking_id: newUid,
+    user_id: userId,
+    user_email: attendeeEmail,
+    event_type: extractEventType(payload),
+    start_time: payload.startTime,
+    end_time: payload.endTime,
+    status: 'scheduled',
+    join_url: joinUrl,
+    cancel_url: cancelUrl,
+    reschedule_url: rescheduleUrl,
+    raw_payload: payload,
+  });
+}
+
+// ── main handler ─────────────────────────────────────────────────────────────
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
-  const rawBody = event.body || '';
-
-  if (!verifyWebhookAuth(rawBody, event.headers, CAL_WEBHOOK_SECRET)) {
-    const headerKeys       = Object.keys(event.headers).join(', ');
-    const hasHmacHeader    = !!getSignatureFromHeaders(event.headers);
-    const hasSharedSecret  = !!event.headers['x-webhook-secret'];
-    console.error(
-      'Cal.com webhook auth failed – ' +
-      `hmac_header_present=${hasHmacHeader}, ` +
-      `shared_secret_header_present=${hasSharedSecret}, ` +
-      `headers=[${headerKeys}]`
-    );
-    return { statusCode: 401, body: 'Invalid signature' };
+  const verification = verifyCalWebhook(event);
+  if (!verification.ok) {
+    // Do not log secrets; just log what auth material was present.
+    const headerKeys = Object.keys(event.headers || {}).sort();
+    console.error('Cal.com webhook verification failed', {
+      mode: verification.mode,
+      hasSignature: !!verification.hasSignature,
+      hasSharedSecret: !!verification.hasSharedSecret,
+      headerKeys,
+    });
+    return { statusCode: 401, body: 'Unauthorized' };
   }
+
+  const rawBody = event.body || '';
 
   let parsed;
   try {
     parsed = JSON.parse(rawBody);
-  } catch (err) {
+  } catch {
     return { statusCode: 400, body: 'Invalid JSON' };
   }
 
-  const trigger = (parsed.triggerEvent || '').toUpperCase();
-  const payload  = parsed.payload || parsed;
+  const trigger = String(parsed.triggerEvent || '').toUpperCase();
+  const payload = parsed.payload || parsed;
 
-  console.log(`Cal.com webhook received: ${trigger}`);
+  console.log(`Cal.com webhook received: ${trigger} (auth=${verification.mode})`);
 
   try {
     if (trigger === 'BOOKING_CREATED') {
@@ -258,6 +334,7 @@ exports.handler = async (event) => {
     } else {
       console.log(`Unhandled trigger: ${trigger}`);
     }
+
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (err) {
     console.error('cal-webhook error:', err);
