@@ -18,6 +18,16 @@
       <div class="card-body">
         <div id="alert" class="alert alert-error hidden"></div>
 
+        <!-- Google sign-in -->
+        <button type="button" class="btn btn-outline btn-block btn-lg" id="googleBtn">
+          <i class="fa-brands fa-google" aria-hidden="true"></i>
+          Continue with Google
+        </button>
+
+        <div class="divider" style="margin: 1rem 0; text-align:center; opacity:.7;">
+          <span style="background: var(--card-bg, #fff); padding: 0 .75rem;">or</span>
+        </div>
+
         <form id="loginForm" novalidate>
           <div class="form-group">
             <label for="email">Email address</label>
@@ -54,6 +64,7 @@
     const form      = document.getElementById('loginForm');
     const alertBox  = document.getElementById('alert');
     const submitBtn = document.getElementById('submitBtn');
+    const googleBtn = document.getElementById('googleBtn');
 
     function showAlert(msg) {
       alertBox.textContent = msg;
@@ -61,6 +72,33 @@
     }
     function hideAlert() { alertBox.classList.add('hidden'); }
 
+    function routeByEmail(email) {
+      window.location.href = email === ADMIN_EMAIL
+        ? '/admin.html'
+        : '/dashboard.html';
+    }
+
+    // Google OAuth
+    googleBtn.addEventListener('click', async () => {
+      hideAlert();
+      setBtnLoading(googleBtn, true, 'Redirecting…');
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          // After Google -> Supabase callback, send back here; we will route based on ADMIN_EMAIL.
+          redirectTo: `${window.location.origin}/login.html`,
+        },
+      });
+
+      if (error) {
+        showAlert(error.message);
+        setBtnLoading(googleBtn, false);
+      }
+      // On success the browser redirects; no further code runs here.
+    });
+
+    // Email/password login
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       hideAlert();
@@ -83,10 +121,15 @@
         return;
       }
 
-      window.location.href = data.user.email === ADMIN_EMAIL
-        ? '/admin.html'
-        : '/dashboard.html';
+      routeByEmail(data.user.email);
     });
+
+    // If we returned from OAuth, there may already be a session here.
+    // Supabase parses the OAuth tokens from the URL automatically.
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData?.session?.user?.email) {
+      routeByEmail(sessionData.session.user.email);
+    }
   </script>
 </body>
 </html>
