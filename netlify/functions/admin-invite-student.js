@@ -54,13 +54,14 @@ async function getProfileRole(userId) {
 
 // Upsert a row in public.student_invites (status='pending') for the invited email.
 // Uses merge-duplicates so a re-invite resets the pending record.
-async function upsertStudentInvite(email, fullName, invitedBy) {
+async function upsertStudentInvite(email, fullName, invitedBy, invitedUserId) {
   const url = `${SUPABASE_URL}/rest/v1/student_invites`;
   const body = {
     email,
-    full_name:   fullName || null,
-    invited_by:  invitedBy || null,
-    status:      'pending',
+    full_name:        fullName || null,
+    invited_by:       invitedBy || null,
+    invited_user_id:  invitedUserId || null,
+    status:           'pending',
   };
   const res = await fetch(url, {
     method: 'POST',
@@ -160,8 +161,12 @@ exports.handler = async (event) => {
 
     console.log(`Admin ${caller.id} inviting user: ${trimmedEmail}`);
 
-    await inviteUser(trimmedEmail, trimmedFullName || null);
-    await upsertStudentInvite(trimmedEmail, trimmedFullName || null, caller.id);
+    const inviteData = await inviteUser(trimmedEmail, trimmedFullName || null);
+    const invitedUserId = inviteData?.id || null;
+    if (!invitedUserId) {
+      console.warn(`admin-invite-student: invite response did not include a user id for ${trimmedEmail}`);
+    }
+    await upsertStudentInvite(trimmedEmail, trimmedFullName || null, caller.id, invitedUserId);
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (err) {

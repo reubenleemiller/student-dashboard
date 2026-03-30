@@ -48,3 +48,8 @@
   from = "/api/admin-invite-student"
   to = "/.netlify/functions/admin-invite-student"
   status = 200
+
+[[redirects]]
+  from = "/api/accept-invite"
+  to = "/.netlify/functions/accept-invite"
+  status = 200

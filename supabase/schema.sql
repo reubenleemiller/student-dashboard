@@ -91,14 +91,11 @@ BEGIN
   )
   ON CONFLICT (id) DO NOTHING;
 
-  -- Mark any pending invite for this email as accepted
-  UPDATE public.student_invites
-  SET
-    status           = 'accepted',
-    accepted_at      = NOW(),
-    accepted_user_id = NEW.id
-  WHERE email = NEW.email
-    AND status = 'pending';
+  -- NOTE: Do NOT mark the invite as accepted here.
+  -- The auth.users row is created immediately when admin sends the invite,
+  -- so this trigger fires before the user has actually completed onboarding.
+  -- The invite is marked accepted by the accept-invite Netlify function,
+  -- which is called client-side after the user's first successful sign-in.
 
   RETURN NEW;
 END;
@@ -224,15 +221,16 @@ CREATE POLICY "Admin can update any profile" ON public.profiles
 --    student list before they complete signup.
 -- -------------------------
 CREATE TABLE IF NOT EXISTS public.student_invites (
-  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  email           TEXT        NOT NULL UNIQUE,
-  full_name       TEXT        NULL,
-  invited_by      UUID        REFERENCES public.profiles(id) ON DELETE SET NULL,
-  status          TEXT        NOT NULL DEFAULT 'pending'
-                                CHECK (status IN ('pending', 'accepted', 'cancelled')),
-  invited_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  accepted_at     TIMESTAMPTZ NULL,
-  accepted_user_id UUID       REFERENCES public.profiles(id) ON DELETE SET NULL
+  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  email            TEXT        NOT NULL UNIQUE,
+  full_name        TEXT        NULL,
+  invited_by       UUID        REFERENCES public.profiles(id) ON DELETE SET NULL,
+  invited_user_id  UUID        NULL REFERENCES auth.users(id) ON DELETE SET NULL,
+  status           TEXT        NOT NULL DEFAULT 'pending'
+                                 CHECK (status IN ('pending', 'accepted', 'cancelled')),
+  invited_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  accepted_at      TIMESTAMPTZ NULL,
+  accepted_user_id UUID        REFERENCES public.profiles(id) ON DELETE SET NULL
 );
 
 ALTER TABLE public.student_invites ENABLE ROW LEVEL SECURITY;
@@ -242,3 +240,17 @@ CREATE POLICY "Admin can manage invites" ON public.student_invites
   FOR ALL TO authenticated
   USING (auth.email() = 'reuben.miller@rmtutoringservices.com')
   WITH CHECK (auth.email() = 'reuben.miller@rmtutoringservices.com');
+
+-- -------------------------
+-- 9. Migration helpers
+--    Apply these statements when upgrading an existing database that was
+--    created from an earlier version of this schema.
+-- -------------------------
+-- Add invited_user_id column if it does not exist yet
+ALTER TABLE public.student_invites
+  ADD COLUMN IF NOT EXISTS invited_user_id UUID NULL REFERENCES auth.users(id) ON DELETE SET NULL;
+
+-- Remove the old auto-accept logic from handle_new_user (already replaced above).
+-- If the trigger was previously created with that logic, the CREATE OR REPLACE
+-- above will overwrite it the next time this file is applied in full.
+

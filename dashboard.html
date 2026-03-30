@@ -289,6 +289,14 @@
     }
     const user = session.user;
 
+    // ── Accept pending invite (idempotent) ────────────────────────────
+    // Called on every load so invite is marked accepted after first sign-in,
+    // regardless of which sign-in method was used.
+    fetch('/api/accept-invite', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    }).catch(err => { console.warn('accept-invite failed:', err); });
+
     // ── User info ─────────────────────────────────────────────────────
     document.getElementById('userInfo').textContent = user.email;
 

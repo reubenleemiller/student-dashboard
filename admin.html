@@ -259,13 +259,31 @@
 
       allStudents = (profilesResult.data || []).filter(p => p.email !== adminUser.email);
 
-      // Attach pending invites; exclude any whose email already has a profile row
-      const existingEmails = new Set(allStudents.map(s => s.email.toLowerCase()));
+      // Build a set of emails that have a pending invite so we can badge them.
+      // Invited users get a profiles row immediately (Supabase creates auth.users
+      // at invite time), so we must NOT exclude them from allStudents.
+      const pendingInviteEmails = new Set(
+        (invitesResult.data || []).map(inv => inv.email.toLowerCase())
+      );
+
+      // Any pending invite whose email has no matching profile row is shown as a
+      // standalone pending row (edge case — normally profiles are created immediately).
+      const profileEmails = new Set(allStudents.map(s => s.email.toLowerCase()));
       allPendingInvites = (invitesResult.data || [])
-        .filter(inv => !existingEmails.has(inv.email.toLowerCase()))
+        .filter(inv => !profileEmails.has(inv.email.toLowerCase()))
         .map(inv => ({ ...inv, _isPendingInvite: true }));
 
-      renderStudentsTable([...allPendingInvites, ...allStudents]);
+      // Mark each profile-based student as pending if they have a pending invite.
+      allStudents = allStudents.map(s =>
+        pendingInviteEmails.has(s.email.toLowerCase())
+          ? { ...s, _isPendingInvite: true }
+          : s
+      );
+
+      // Pending rows first, then regular students
+      const pendingProfiles = allStudents.filter(s => s._isPendingInvite);
+      const regularStudents = allStudents.filter(s => !s._isPendingInvite);
+      renderStudentsTable([...allPendingInvites, ...pendingProfiles, ...regularStudents]);
     }
 
     function renderStudentsTable(students) {
@@ -282,7 +300,7 @@
           <td>${s.full_name || '–'}</td>
           <td>${s.email}</td>
           <td><span class="badge badge-pending">Pending</span></td>
-          <td>${new Date(s.invited_at).toLocaleDateString()}</td>
+          <td>${new Date(s.invited_at || s.created_at).toLocaleDateString()}</td>
           <td class="flex gap-2">
             <button class="btn btn-ghost btn-sm" disabled title="Not yet registered"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
             <button class="btn btn-outline btn-sm" disabled title="Not yet registered">View Bookings</button>
