@@ -10,16 +10,19 @@
 //                                (A) HMAC signature header (x-cal-signature-256 / x-cal-signature)
 //                                    where signature is "sha256=<hex>" OR "<hex>"
 //                                (B) shared secret header (x-webhook-secret) equal to CAL_WEBHOOK_SECRET
+//   CAL_USERNAME              – Cal.com username to build overlay reschedule URLs (default: rleemiller)
 //
 // Notes:
 // - If CAL_WEBHOOK_SECRET is NOT set, signature verification is disabled.
-// - Cancel/reschedule URLs are normalized to https://app.cal.com/booking/<uid>?... format.
+// - Cancel URLs are stored as Cal booking management URLs on app.cal.com.
+// - Reschedule URLs are stored as overlay-calendar URLs on cal.com/<username>/<eventSlug>?rescheduleUid=...
 
 const crypto = require('crypto');
 
 const SUPABASE_URL          = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const CAL_WEBHOOK_SECRET    = process.env.CAL_WEBHOOK_SECRET;
+const CAL_USERNAME          = process.env.CAL_USERNAME || 'rleemiller';
 
 if (!SUPABASE_URL) throw new Error('SUPABASE_URL environment variable is required');
 if (!SUPABASE_SERVICE_ROLE) throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is required');
@@ -37,13 +40,7 @@ function safeEqual(a, b) {
 function getHeader(event, name) {
   if (!event?.headers) return '';
   const lower = name.toLowerCase();
-
-  // Netlify normalizes to lowercase, but be safe:
-  return (
-    event.headers[lower] ||
-    event.headers[name] ||
-    ''
-  );
+  return event.headers[lower] || event.headers[name] || '';
 }
 
 function normalizeCalSignature(sig) {
@@ -73,8 +70,6 @@ function verifyCalWebhook(event) {
   if (sigHeader) {
     const providedHex = normalizeCalSignature(sigHeader);
     const expectedHex = computeHmacHex(rawBody, CAL_WEBHOOK_SECRET);
-
-    // constant-time compare when lengths match
     const ok = providedHex.length === expectedHex.length && safeEqual(providedHex, expectedHex);
     return { ok, mode: 'hmac', hasSignature: true };
   }
@@ -89,22 +84,60 @@ function verifyCalWebhook(event) {
   return { ok: false, mode: 'missing-auth', hasSignature: false, hasSharedSecret: false };
 }
 
-function buildCalManageUrl(uid, attendeeEmail, mode) {
-  // mode: 'cancel' | 'reschedule'
+function extractAttendeeEmail(payload) {
+  const email =
+    payload?.attendees?.[0]?.email ||
+    payload?.attendee?.email ||
+    payload?.responses?.email ||
+    '';
+  return String(email || '').trim().toLowerCase();
+}
+
+function extractEventSlug(payload) {
+  // You said this is likely payload.type (e.g. "90min")
+  return payload?.type || payload?.eventType?.slug || null;
+}
+
+function extractJoinUrl(payload) {
+  return payload?.videoCallData?.url || payload?.metadata?.videoCallUrl || null;
+}
+
+function buildCalCancelUrl(uid, attendeeEmail) {
+  // Example desired shape:
+  // https://app.cal.com/booking/<uid>?allRemainingBookings=false&email=...&uid=<uid>&cancel=true
   if (!uid) return null;
 
   const base = `https://app.cal.com/booking/${encodeURIComponent(uid)}`;
   const params = new URLSearchParams();
 
   params.set('allRemainingBookings', 'false');
-  params.set('uid', uid);
-
   if (attendeeEmail) params.set('email', attendeeEmail);
+  params.set('uid', uid);
+  params.set('cancel', 'true');
 
-  if (mode === 'cancel') {
-    params.set('cancel', 'true');
-  } else if (mode === 'reschedule') {
-    params.set('reschedule', 'true');
+  return `${base}?${params.toString()}`;
+}
+
+function buildCalOverlayRescheduleUrl(uid, attendeeEmail, eventSlug, startTimeIso) {
+  // Example desired shape:
+  // https://cal.com/<username>/<eventSlug>?rescheduleUid=<uid>&rescheduledBy=<email>&overlayCalendar=true&date=YYYY-MM-DD
+  if (!CAL_USERNAME || !eventSlug || !uid) return null;
+
+  const base = `https://cal.com/${encodeURIComponent(CAL_USERNAME)}/${encodeURIComponent(eventSlug)}`;
+  const params = new URLSearchParams();
+
+  params.set('rescheduleUid', uid);
+  if (attendeeEmail) params.set('rescheduledBy', attendeeEmail);
+  params.set('overlayCalendar', 'true');
+
+  if (startTimeIso) {
+    const d = new Date(startTimeIso);
+    if (!Number.isNaN(d.getTime())) {
+      const yyyy = d.getUTCFullYear();
+      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(d.getUTCDate()).padStart(2, '0');
+      params.set('date', `${yyyy}-${mm}-${dd}`);
+    }
   }
 
   return `${base}?${params.toString()}`;
@@ -134,9 +167,7 @@ async function supabaseFetch(path, options = {}) {
 
 async function findUserByEmail(email) {
   if (!email) return null;
-  const rows = await supabaseFetch(
-    `/profiles?email=eq.${encodeURIComponent(email)}&select=id&limit=1`
-  );
+  const rows = await supabaseFetch(`/profiles?email=eq.${encodeURIComponent(email)}&select=id&limit=1`);
   return Array.isArray(rows) && rows.length ? rows[0].id : null;
 }
 
@@ -150,51 +181,32 @@ async function upsertBooking(booking) {
 
 // ── event handlers ───────────────────────────────────────────────────────────
 
-function extractAttendeeEmail(payload) {
-  // Prefer first attendee email (most common Cal payload)
-  const email =
-    payload?.attendees?.[0]?.email ||
-    payload?.attendee?.email ||
-    payload?.responses?.email ||
-    '';
-
-  return String(email || '').trim().toLowerCase();
-}
-
-function extractEventType(payload) {
-  return payload?.type || payload?.eventType?.slug || payload?.eventType || null;
-}
-
 async function handleBookingCreated(payload) {
   const attendeeEmail = extractAttendeeEmail(payload);
   const userId = attendeeEmail ? await findUserByEmail(attendeeEmail) : null;
 
   const uid = payload.uid;
-
-  const joinUrl =
-    payload.videoCallData?.url ||
-    payload.metadata?.videoCallUrl ||
-    null;
+  const eventSlug = extractEventSlug(payload);
 
   const cancelUrl =
     payload.cancelUrl ||
     payload.metadata?.cancelUrl ||
-    buildCalManageUrl(uid, attendeeEmail, 'cancel');
+    buildCalCancelUrl(uid, attendeeEmail);
 
   const rescheduleUrl =
     payload.rescheduleUrl ||
     payload.metadata?.rescheduleUrl ||
-    buildCalManageUrl(uid, attendeeEmail, 'reschedule');
+    buildCalOverlayRescheduleUrl(uid, attendeeEmail, eventSlug, payload.startTime);
 
   await upsertBooking({
     cal_booking_id: uid,
     user_id: userId,
     user_email: attendeeEmail,
-    event_type: extractEventType(payload),
+    event_type: eventSlug,
     start_time: payload.startTime,
     end_time: payload.endTime,
     status: 'scheduled',
-    join_url: joinUrl,
+    join_url: extractJoinUrl(payload),
     cancel_url: cancelUrl,
     reschedule_url: rescheduleUrl,
     raw_payload: payload,
@@ -205,46 +217,70 @@ async function handleBookingCancelled(payload) {
   const uid = payload.uid;
   if (!uid) return;
 
-  // Patch existing booking if it exists; otherwise store it as cancelled
+  // Update status if it exists
   const rows = await supabaseFetch(
-    `/bookings?cal_booking_id=eq.${encodeURIComponent(uid)}&select=id&limit=1`
+    `/bookings?cal_booking_id=eq.${encodeURIComponent(uid)}&select=id, user_email, event_type, start_time&limit=1`
   ).catch(() => []);
 
   if (Array.isArray(rows) && rows.length) {
+    const existing = rows[0];
+
+    // Keep/repair cancel/reschedule URLs on cancel event too
+    const attendeeEmail = (existing.user_email || extractAttendeeEmail(payload) || '').toLowerCase();
+    const eventSlug = existing.event_type || extractEventSlug(payload);
+    const startTime = existing.start_time || payload.startTime || null;
+
+    const cancelUrl =
+      payload.cancelUrl ||
+      payload.metadata?.cancelUrl ||
+      buildCalCancelUrl(uid, attendeeEmail);
+
+    // For cancelled bookings we still store it (for history), but UI should hide reschedule.
+    const rescheduleUrl =
+      payload.rescheduleUrl ||
+      payload.metadata?.rescheduleUrl ||
+      buildCalOverlayRescheduleUrl(uid, attendeeEmail, eventSlug, startTime);
+
     await supabaseFetch(`/bookings?cal_booking_id=eq.${encodeURIComponent(uid)}`, {
       method: 'PATCH',
       headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ status: 'cancelled', raw_payload: payload }),
+      body: JSON.stringify({
+        status: 'cancelled',
+        cancel_url: cancelUrl,
+        reschedule_url: rescheduleUrl,
+        raw_payload: payload,
+      }),
     });
     return;
   }
 
+  // If booking not found, store a minimal cancelled booking
   const attendeeEmail = extractAttendeeEmail(payload);
   const userId = attendeeEmail ? await findUserByEmail(attendeeEmail) : null;
+  const eventSlug = extractEventSlug(payload);
 
   await upsertBooking({
     cal_booking_id: uid,
     user_id: userId,
     user_email: attendeeEmail,
-    event_type: extractEventType(payload),
+    event_type: eventSlug,
     start_time: payload.startTime,
     end_time: payload.endTime,
     status: 'cancelled',
-    join_url: payload.videoCallData?.url || payload.metadata?.videoCallUrl || null,
+    join_url: extractJoinUrl(payload),
     cancel_url:
       payload.cancelUrl ||
       payload.metadata?.cancelUrl ||
-      buildCalManageUrl(uid, attendeeEmail, 'cancel'),
+      buildCalCancelUrl(uid, attendeeEmail),
     reschedule_url:
       payload.rescheduleUrl ||
       payload.metadata?.rescheduleUrl ||
-      buildCalManageUrl(uid, attendeeEmail, 'reschedule'),
+      buildCalOverlayRescheduleUrl(uid, attendeeEmail, eventSlug, payload.startTime),
     raw_payload: payload,
   });
 }
 
 async function handleBookingRescheduled(payload) {
-  // Cal.com gives the new booking a new UID; old UID sometimes in rescheduleUid
   const newUid = payload.uid;
   const oldUid = payload.rescheduleUid || payload.metadata?.rescheduleUid;
 
@@ -257,33 +293,30 @@ async function handleBookingRescheduled(payload) {
     }).catch(() => {});
   }
 
+  // Upsert the new booking as scheduled
   const attendeeEmail = extractAttendeeEmail(payload);
   const userId = attendeeEmail ? await findUserByEmail(attendeeEmail) : null;
-
-  const joinUrl =
-    payload.videoCallData?.url ||
-    payload.metadata?.videoCallUrl ||
-    null;
+  const eventSlug = extractEventSlug(payload);
 
   const cancelUrl =
     payload.cancelUrl ||
     payload.metadata?.cancelUrl ||
-    buildCalManageUrl(newUid, attendeeEmail, 'cancel');
+    buildCalCancelUrl(newUid, attendeeEmail);
 
   const rescheduleUrl =
     payload.rescheduleUrl ||
     payload.metadata?.rescheduleUrl ||
-    buildCalManageUrl(newUid, attendeeEmail, 'reschedule');
+    buildCalOverlayRescheduleUrl(newUid, attendeeEmail, eventSlug, payload.startTime);
 
   await upsertBooking({
     cal_booking_id: newUid,
     user_id: userId,
     user_email: attendeeEmail,
-    event_type: extractEventType(payload),
+    event_type: eventSlug,
     start_time: payload.startTime,
     end_time: payload.endTime,
     status: 'scheduled',
-    join_url: joinUrl,
+    join_url: extractJoinUrl(payload),
     cancel_url: cancelUrl,
     reschedule_url: rescheduleUrl,
     raw_payload: payload,
@@ -299,7 +332,6 @@ exports.handler = async (event) => {
 
   const verification = verifyCalWebhook(event);
   if (!verification.ok) {
-    // Do not log secrets; just log what auth material was present.
     const headerKeys = Object.keys(event.headers || {}).sort();
     console.error('Cal.com webhook verification failed', {
       mode: verification.mode,
