@@ -79,12 +79,21 @@ export function confirmModal(message, confirmLabel = 'Confirm', danger = false) 
       </div>
     `;
     document.body.appendChild(overlay);
-    overlay.querySelector('#modal-cancel').addEventListener('click', () => {
-      overlay.remove(); resolve(false);
-    });
-    overlay.querySelector('#modal-confirm').addEventListener('click', () => {
-      overlay.remove(); resolve(true);
-    });
+
+    function dismiss(result) {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(result);
+    }
+
+    function onKey(e) {
+      if (e.key === 'Escape') dismiss(false);
+    }
+
+    document.addEventListener('keydown', onKey);
+    overlay.querySelector('#modal-cancel').addEventListener('click', () => dismiss(false));
+    overlay.querySelector('#modal-confirm').addEventListener('click', () => dismiss(true));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) dismiss(false); });
   });
 }
 

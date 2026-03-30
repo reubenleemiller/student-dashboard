@@ -1033,10 +1033,6 @@
       );
       if (!confirmed) return;
 
-      // Double-confirm by typing DELETE
-      const typed = prompt('Type DELETE to confirm:');
-      if (typed !== 'DELETE') { showToast('Account deletion cancelled.', 'info'); return; }
-
       const deleteBtn = document.getElementById('deleteAccountBtn');
       setBtnLoading(deleteBtn, true, 'Deleting…');
 

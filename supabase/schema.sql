@@ -90,6 +90,16 @@ BEGIN
     END
   )
   ON CONFLICT (id) DO NOTHING;
+
+  -- Mark any pending invite for this email as accepted
+  UPDATE public.student_invites
+  SET
+    status           = 'accepted',
+    accepted_at      = NOW(),
+    accepted_user_id = NEW.id
+  WHERE email = NEW.email
+    AND status = 'pending';
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -205,5 +215,30 @@ CREATE POLICY "Users can manage own item order" ON public.storage_item_order
 -- -------------------------
 CREATE POLICY "Admin can update any profile" ON public.profiles
   FOR UPDATE TO authenticated
+  USING (auth.email() = 'reuben.miller@rmtutoringservices.com')
+  WITH CHECK (auth.email() = 'reuben.miller@rmtutoringservices.com');
+
+-- -------------------------
+-- 8. student_invites table
+--    Tracks admin-sent invitations so pending invitees appear in the
+--    student list before they complete signup.
+-- -------------------------
+CREATE TABLE IF NOT EXISTS public.student_invites (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  email           TEXT        NOT NULL UNIQUE,
+  full_name       TEXT        NULL,
+  invited_by      UUID        REFERENCES public.profiles(id) ON DELETE SET NULL,
+  status          TEXT        NOT NULL DEFAULT 'pending'
+                                CHECK (status IN ('pending', 'accepted', 'cancelled')),
+  invited_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  accepted_at     TIMESTAMPTZ NULL,
+  accepted_user_id UUID       REFERENCES public.profiles(id) ON DELETE SET NULL
+);
+
+ALTER TABLE public.student_invites ENABLE ROW LEVEL SECURITY;
+
+-- Admin can read and manage all invites; non-admins have no access
+CREATE POLICY "Admin can manage invites" ON public.student_invites
+  FOR ALL TO authenticated
   USING (auth.email() = 'reuben.miller@rmtutoringservices.com')
   WITH CHECK (auth.email() = 'reuben.miller@rmtutoringservices.com');

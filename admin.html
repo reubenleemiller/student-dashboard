@@ -241,23 +241,31 @@
 
     // ── Students ───────────────────────────────────────────────────────
     let allStudents = [];
+    let allPendingInvites = [];
 
     async function loadStudents() {
       const wrap = document.getElementById('studentsTableWrap');
       wrap.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading…</div>';
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [profilesResult, invitesResult] = await Promise.all([
+        supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+        supabase.from('student_invites').select('*').eq('status', 'pending').order('invited_at', { ascending: false }),
+      ]);
 
-      if (error) {
-        wrap.innerHTML = `<div class="alert alert-error m-4">${error.message}</div>`;
+      if (profilesResult.error) {
+        wrap.innerHTML = `<div class="alert alert-error m-4">${profilesResult.error.message}</div>`;
         return;
       }
 
-      allStudents = (data || []).filter(p => p.email !== adminUser.email);
-      renderStudentsTable(allStudents);
+      allStudents = (profilesResult.data || []).filter(p => p.email !== adminUser.email);
+
+      // Attach pending invites; exclude any whose email already has a profile row
+      const existingEmails = new Set(allStudents.map(s => s.email.toLowerCase()));
+      allPendingInvites = (invitesResult.data || [])
+        .filter(inv => !existingEmails.has(inv.email.toLowerCase()))
+        .map(inv => ({ ...inv, _isPendingInvite: true }));
+
+      renderStudentsTable([...allPendingInvites, ...allStudents]);
     }
 
     function renderStudentsTable(students) {
@@ -267,7 +275,23 @@
         return;
       }
 
-      const rows = students.map(s => `
+      const rows = students.map(s => {
+        if (s._isPendingInvite) {
+          return `
+        <tr class="pending-invite-row">
+          <td>${s.full_name || '–'}</td>
+          <td>${s.email}</td>
+          <td><span class="badge badge-pending">Pending</span></td>
+          <td>${new Date(s.invited_at).toLocaleDateString()}</td>
+          <td class="flex gap-2">
+            <button class="btn btn-ghost btn-sm" disabled title="Not yet registered"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
+            <button class="btn btn-outline btn-sm" disabled title="Not yet registered">View Bookings</button>
+            <button class="btn btn-ghost btn-sm" disabled title="Not yet registered">Browse Files</button>
+            <button class="btn btn-danger btn-sm" disabled title="Not yet registered"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>
+          </td>
+        </tr>`;
+        }
+        return `
         <tr>
           <td>${s.full_name || '–'}</td>
           <td>${s.email}</td>
@@ -279,7 +303,8 @@
             <button class="btn btn-ghost   btn-sm view-storage-btn"  data-id="${s.id}" data-email="${s.email}" data-name="${s.full_name || s.email}">Browse Files</button>
             <button class="btn btn-danger btn-sm delete-student-btn" data-id="${s.id}" data-name="${s.full_name || s.email}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>
           </td>
-        </tr>`).join('');
+        </tr>`;
+      }).join('');
 
       wrap.innerHTML = `
         <div class="table-wrapper">
@@ -325,11 +350,15 @@
     // Student search
     document.getElementById('studentSearch').addEventListener('input', (e) => {
       const q = e.target.value.toLowerCase();
-      const filtered = allStudents.filter(s =>
+      const filteredStudents = allStudents.filter(s =>
         (s.full_name || '').toLowerCase().includes(q) ||
         s.email.toLowerCase().includes(q)
       );
-      renderStudentsTable(filtered);
+      const filteredInvites = allPendingInvites.filter(inv =>
+        (inv.full_name || '').toLowerCase().includes(q) ||
+        inv.email.toLowerCase().includes(q)
+      );
+      renderStudentsTable([...filteredInvites, ...filteredStudents]);
     });
 
     /** Invite a new student via the admin invite endpoint. */
@@ -385,6 +414,7 @@
             if (!res.ok) throw new Error(json.error || 'Invite failed');
             showToast(`Invitation sent to ${email}.`, 'success');
             cleanup();
+            await loadStudents();
           } catch (err) {
             errEl.textContent = err.message;
             errEl.classList.remove('hidden');

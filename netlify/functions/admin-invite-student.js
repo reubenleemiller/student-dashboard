@@ -52,7 +52,34 @@ async function getProfileRole(userId) {
   return null;
 }
 
-// Invite a user via the Supabase Auth Admin API
+// Upsert a row in public.student_invites (status='pending') for the invited email.
+// Uses merge-duplicates so a re-invite resets the pending record.
+async function upsertStudentInvite(email, fullName, invitedBy) {
+  const url = `${SUPABASE_URL}/rest/v1/student_invites`;
+  const body = {
+    email,
+    full_name:   fullName || null,
+    invited_by:  invitedBy || null,
+    status:      'pending',
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      apikey:          SUPABASE_SERVICE_ROLE,
+      Authorization:   `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      'Content-Type':  'application/json',
+      'Prefer':        'resolution=merge-duplicates',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    // Log but don't throw – invite email was already sent; this is non-critical
+    console.warn(`student_invites upsert warning for ${email} (${res.status}): ${text}`);
+  }
+}
+
+
 async function inviteUser(email, fullName) {
   const url = `${SUPABASE_URL}/auth/v1/invite`;
   const body = { email };
@@ -134,6 +161,7 @@ exports.handler = async (event) => {
     console.log(`Admin ${caller.id} inviting user: ${trimmedEmail}`);
 
     await inviteUser(trimmedEmail, trimmedFullName || null);
+    await upsertStudentInvite(trimmedEmail, trimmedFullName || null, caller.id);
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (err) {
