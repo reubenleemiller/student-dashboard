@@ -232,11 +232,12 @@
 
   <script type="module">
     import { getSupabase }                               from '/js/supabase-client.js';
-    const supabase = await getSupabase();
     import { requireAuth, ADMIN_EMAIL, showToast,
              confirmModal, formatDate, formatFileSize,
              setBtnLoading }                              from '/js/auth.js';
     import { BookingCalendar }                           from '/js/calendar.js';
+
+    const supabase = await getSupabase();
 
     // ── Configuration ─────────────────────────────────────────────────
     const CAL_USERNAME = 'rleemiller'; // Cal.com username for event type links

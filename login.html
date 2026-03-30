@@ -43,8 +43,9 @@
 
   <script type="module">
     import { getSupabase }                    from '/js/supabase-client.js';
-    const supabase = await getSupabase();
     import { requireNotAuth, setBtnLoading }  from '/js/auth.js';
+
+    const supabase = await getSupabase();
 
     const ADMIN_EMAIL = 'reuben.miller@rmtutoringservices.com';
 
