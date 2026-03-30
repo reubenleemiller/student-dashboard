@@ -38,3 +38,8 @@
   from = "/api/admin-delete-user"
   to = "/.netlify/functions/admin-delete-user"
   status = 200
+
+[[redirects]]
+  from = "/api/admin-delete-booking"
+  to = "/.netlify/functions/admin-delete-booking"
+  status = 200
