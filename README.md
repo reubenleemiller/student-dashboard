@@ -30,11 +30,12 @@ A deployable student portal built with **HTML / CSS / vanilla JS**, backed by **
 ├── css/
 │   └── styles.css              All shared styles
 ├── js/
-│   ├── supabase-client.js      Supabase client singleton (set your keys here)
+│   ├── supabase-client.js      Supabase client singleton (config fetched at runtime)
 │   ├── auth.js                 Auth guards + shared utilities
 │   └── calendar.js             Pure-JS month calendar component
 ├── netlify/
 │   └── functions/
+│       ├── public-config.js    Returns SUPABASE_URL + SUPABASE_ANON_KEY to the browser
 │       ├── cal-webhook.js      Cal.com webhook receiver
 │       └── delete-account.js   Secure account-deletion endpoint
 ├── supabase/
@@ -60,16 +61,20 @@ A deployable student portal built with **HTML / CSS / vanilla JS**, backed by **
 2. Paste the entire contents of `supabase/schema.sql` and run it.
 3. In **Storage → Buckets**, create a new bucket named exactly **`student-resources`** and set it to **Private** (not public). The RLS policies are applied by the schema SQL.
 
-### 3 · Configure the frontend Supabase keys
+### 3 · Set Netlify environment variables
 
-Open `js/supabase-client.js` and replace the two placeholder values:
+All Supabase config is loaded at runtime from Netlify environment variables — **no values should be hard-coded in the repo**.
 
-```js
-const SUPABASE_URL      = 'https://your-project.supabase.co';
-const SUPABASE_ANON_KEY = 'your-anon-key-here';
-```
+In your Netlify site go to **Site settings → Environment variables** and add:
 
-These are **public** values — they are safe to commit and expose in browser code.
+| Variable | Description |
+|---|---|
+| `SUPABASE_URL` | Your Supabase project URL (e.g. `https://xxxx.supabase.co`) |
+| `SUPABASE_ANON_KEY` | Your Supabase anon / public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Your Supabase service-role key (used only by Netlify Functions) |
+| `CAL_WEBHOOK_SECRET` | The secret set in Cal.com webhook settings (optional but recommended) |
+
+The frontend fetches `SUPABASE_URL` and `SUPABASE_ANON_KEY` at runtime via the `/api/public-config` Netlify Function. This keeps the values out of the repository so Netlify Secrets Scanning does not block the build.
 
 ### 4 · Deploy to Netlify
 
@@ -86,6 +91,7 @@ These are **public** values — they are safe to commit and expose in browser co
 | Variable | Value |
 |---|---|
 | `SUPABASE_URL` | your Supabase project URL |
+| `SUPABASE_ANON_KEY` | your Supabase anon (public) key |
 | `SUPABASE_SERVICE_ROLE_KEY` | your Supabase service-role key |
 | `CAL_WEBHOOK_SECRET` | the secret you set in Cal.com (optional but recommended) |
 
@@ -129,6 +135,7 @@ npm install -g netlify-cli
 
 # Set environment variables in a .env file (never commit this file)
 echo 'SUPABASE_URL=https://your-project.supabase.co'       >> .env
+echo 'SUPABASE_ANON_KEY=your-anon-key'                     >> .env
 echo 'SUPABASE_SERVICE_ROLE_KEY=your-service-role-key'     >> .env
 echo 'CAL_WEBHOOK_SECRET=your-webhook-secret'              >> .env
 
@@ -152,8 +159,8 @@ ngrok http 8888
 
 | Variable | Where used | Description |
 |---|---|---|
-| `SUPABASE_URL` | Functions + frontend | Supabase project URL |
-| `SUPABASE_ANON_KEY` | Frontend (`js/supabase-client.js`) | Public anon key — safe in browser |
+| `SUPABASE_URL` | `public-config` function + other functions | Supabase project URL — served to the browser at runtime via `/api/public-config` |
+| `SUPABASE_ANON_KEY` | `public-config` function (served to browser at runtime) | Public anon key — never hard-coded in repo |
 | `SUPABASE_SERVICE_ROLE_KEY` | Netlify Functions only | Admin key — never expose to browser |
 | `CAL_WEBHOOK_SECRET` | `netlify/functions/cal-webhook.js` | HMAC secret to verify Cal.com payloads |
 

@@ -1,12 +1,13 @@
 // js/auth.js
 // Shared auth utilities and guards used across all pages.
 
-import { supabase } from './supabase-client.js';
+import { getSupabase } from './supabase-client.js';
 
 export const ADMIN_EMAIL = 'reuben.miller@rmtutoringservices.com';
 
 /** Redirect to login if no active session. Returns session or null. */
 export async function requireAuth(redirectTo = '/login.html') {
+  const supabase = await getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
     window.location.href = redirectTo;
@@ -28,6 +29,7 @@ export async function requireAdmin() {
 
 /** Redirect already-authenticated users to their dashboard. */
 export async function requireNotAuth() {
+  const supabase = await getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   window.location.href = session.user.email === ADMIN_EMAIL
@@ -37,6 +39,7 @@ export async function requireNotAuth() {
 
 /** Fetch the profile row for the given user id. */
 export async function getProfile(userId) {
+  const supabase = await getSupabase();
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
