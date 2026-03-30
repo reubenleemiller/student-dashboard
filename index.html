@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RM Tutoring Services</title>
   <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <style>
     .landing { min-height: 100vh; display: flex; flex-direction: column; }
     .hero {
@@ -57,7 +58,7 @@
       padding: 1.25rem;
       box-shadow: var(--shadow);
     }
-    .feature-icon { font-size: 1.75rem; margin-bottom: .625rem; }
+    .feature-icon { font-size: 1.75rem; margin-bottom: .625rem; color: var(--primary); }
     .feature-card h3 { font-size: .95rem; margin-bottom: .375rem; }
     .feature-card p  { font-size: .8rem; color: var(--text-muted); }
     footer {
@@ -85,22 +86,22 @@
 
     <div class="features">
       <div class="feature-card">
-        <div class="feature-icon">📅</div>
+        <div class="feature-icon"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i></div>
         <h3>Book Sessions</h3>
         <p>Choose from 60, 90 or 120-minute tutoring sessions and book directly online.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🔗</div>
+        <div class="feature-icon"><i class="fa-solid fa-link" aria-hidden="true"></i></div>
         <h3>Join Links</h3>
         <p>See all your upcoming sessions with one-click join links, reschedule and cancel options.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">📁</div>
+        <div class="feature-icon"><i class="fa-solid fa-folder" aria-hidden="true"></i></div>
         <h3>Resources</h3>
         <p>Your private file folder – upload notes, download materials, and stay organised.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🔒</div>
+        <div class="feature-icon"><i class="fa-solid fa-lock" aria-hidden="true"></i></div>
         <h3>Secure &amp; Private</h3>
         <p>Your data is yours. Powered by Supabase Auth with email/password and row-level security.</p>
       </div>

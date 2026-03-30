@@ -70,7 +70,7 @@ export function confirmModal(message, confirmLabel = 'Confirm', danger = false) 
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal">
-        <h3>${danger ? '⚠️ ' : ''}Are you sure?</h3>
+        <h3>${danger ? '<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ' : ''}Are you sure?</h3>
         <p class="text-muted mt-2">${message}</p>
         <div class="modal-actions">
           <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
@@ -103,4 +103,30 @@ export function formatFileSize(bytes) {
   if (bytes < 1024)        return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const _btnOriginalHTML = new WeakMap();
+
+/**
+ * Toggle a button's loading state.
+ * While loading: disables the button and shows a spinner + label.
+ * When done: restores the original HTML and re-enables the button.
+ *
+ * @param {HTMLButtonElement} btn
+ * @param {boolean} isLoading
+ * @param {string} [loadingLabel] - Text shown next to the spinner
+ */
+export function setBtnLoading(btn, isLoading, loadingLabel = 'Loading…') {
+  if (isLoading) {
+    _btnOriginalHTML.set(btn, btn.innerHTML);
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> ${loadingLabel}`;
+    btn.disabled = true;
+  } else {
+    const original = _btnOriginalHTML.get(btn);
+    if (original !== undefined) {
+      btn.innerHTML = original;
+      _btnOriginalHTML.delete(btn);
+    }
+    btn.disabled = false;
+  }
 }

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sign In – RM Tutoring</title>
   <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
 </head>
 <body class="auth-page">
   <div class="auth-box">
@@ -41,9 +42,9 @@
   </div>
 
   <script type="module">
-    import { getSupabase }     from '/js/supabase-client.js';
+    import { getSupabase }                    from '/js/supabase-client.js';
     const supabase = await getSupabase();
-    import { requireNotAuth }  from '/js/auth.js';
+    import { requireNotAuth, setBtnLoading }  from '/js/auth.js';
 
     const ADMIN_EMAIL = 'reuben.miller@rmtutoringservices.com';
 
@@ -71,15 +72,13 @@
         return;
       }
 
-      submitBtn.disabled = true;
-      submitBtn.innerHTML = '<span class="spinner"></span> Signing in…';
+      setBtnLoading(submitBtn, true, 'Signing in…');
 
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
         showAlert(error.message);
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Sign In';
+        setBtnLoading(submitBtn, false);
         return;
       }
 

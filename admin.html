@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard – RM Tutoring</title>
   <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
 </head>
 <body>
   <div id="toast-container" class="toast-container"></div>
@@ -14,17 +15,17 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <h2>RM Tutoring</h2>
-        <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle menu">☰</button>
+        <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle menu"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
       </div>
       <nav class="sidebar-nav" role="navigation">
         <a class="nav-item active" data-section="students" href="#">
-          <span class="nav-icon">👥</span> Students
+          <span class="nav-icon"><i class="fa-solid fa-users" aria-hidden="true"></i></span> Students
         </a>
         <a class="nav-item" data-section="bookings" href="#">
-          <span class="nav-icon">📋</span> All Bookings
+          <span class="nav-icon"><i class="fa-solid fa-calendar-check" aria-hidden="true"></i></span> All Bookings
         </a>
         <a class="nav-item" data-section="storage" href="#">
-          <span class="nav-icon">📁</span> Storage Browser
+          <span class="nav-icon"><i class="fa-solid fa-folder" aria-hidden="true"></i></span> Storage Browser
         </a>
       </nav>
       <div class="sidebar-footer">
@@ -37,7 +38,7 @@
 
     <!-- ── Main content ── -->
     <main class="main-content">
-      <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu">☰ Menu</button>
+      <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu"><i class="fa-solid fa-bars" aria-hidden="true"></i> Menu</button>
 
       <!-- ── STUDENTS ────────────────────────────────────────────────── -->
       <section id="section-students" class="section active">
@@ -107,9 +108,9 @@
               <nav aria-label="File path" id="adminBreadcrumb" class="breadcrumb"></nav>
             </div>
             <div class="flex gap-2">
-              <button class="btn btn-outline btn-sm" id="adminNewFolderBtn">📁 New Folder</button>
+              <button class="btn btn-outline btn-sm" id="adminNewFolderBtn"><i class="fa-solid fa-folder-plus" aria-hidden="true"></i> New Folder</button>
               <label class="btn btn-primary btn-sm" for="adminFileUpload" style="cursor:pointer">
-                ⬆ Upload
+                <i class="fa-solid fa-upload" aria-hidden="true"></i> Upload
                 <input type="file" id="adminFileUpload" class="hidden" multiple />
               </label>
             </div>
@@ -194,7 +195,7 @@
     function renderStudentsTable(students) {
       const wrap = document.getElementById('studentsTableWrap');
       if (!students.length) {
-        wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><p>No students found.</p></div>';
+        wrap.innerHTML = '<div class="empty-state"><div class="empty-icon"><i class="fa-solid fa-users" aria-hidden="true"></i></div><p>No students found.</p></div>';
         return;
       }
 
@@ -310,7 +311,7 @@
 
       const wrap = document.getElementById('allBookingsTableWrap');
       if (!subset.length) {
-        wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>No bookings found.</p></div>';
+        wrap.innerHTML = '<div class="empty-state"><div class="empty-icon"><i class="fa-solid fa-calendar-check" aria-hidden="true"></i></div><p>No bookings found.</p></div>';
         return;
       }
 
@@ -318,7 +319,7 @@
         const studentName = b.profiles?.full_name || b.profiles?.email || b.user_email || '–';
         const badge       = `<span class="badge badge-${b.status}">${b.status}</span>`;
         const join        = b.join_url
-          ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">🔗 Join</a>`
+          ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="fa-solid fa-link" aria-hidden="true"></i> Join</a>`
           : '<span class="text-muted">–</span>';
         const cancel = b.cancel_url
           ? `<a href="${b.cancel_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Cancel</a>`
@@ -430,18 +431,18 @@
 
       const items = (data || []).filter(f => f.name !== '.keep');
       if (!items.length) {
-        wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>This folder is empty.</p></div>';
+        wrap.innerHTML = '<div class="empty-state"><div class="empty-icon"><i class="fa-solid fa-inbox" aria-hidden="true"></i></div><p>This folder is empty.</p></div>';
         return;
       }
 
       const rows = items.map(item => {
         const isFolder = item.id === null;
-        const icon     = isFolder ? '📁' : getFileIcon(item.name);
+        const icon     = isFolder ? '<i class="fa-solid fa-folder" aria-hidden="true"></i>' : getFileIcon(item.name);
         const size     = isFolder ? '' : `<span class="file-item-size">${formatFileSize(item.metadata?.size)}</span>`;
         const actions  = isFolder
-          ? `<button class="btn btn-ghost btn-sm admin-delete-btn" data-path="${path}${item.name}/" data-folder="true">🗑 Delete</button>`
-          : `<button class="btn btn-outline btn-sm admin-download-btn" data-path="${path}${item.name}">⬇ Download</button>
-             <button class="btn btn-ghost   btn-sm admin-delete-btn"   data-path="${path}${item.name}">🗑 Delete</button>`;
+          ? `<button class="btn btn-ghost btn-sm admin-delete-btn" data-path="${path}${item.name}/" data-folder="true"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>`
+          : `<button class="btn btn-outline btn-sm admin-download-btn" data-path="${path}${item.name}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</button>
+             <button class="btn btn-ghost   btn-sm admin-delete-btn"   data-path="${path}${item.name}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>`;
         return `
           <li class="file-item">
             <span class="file-item-icon">${icon}</span>
@@ -509,9 +510,24 @@
 
     function getFileIcon(name) {
       const ext = name.split('.').pop().toLowerCase();
-      const map = { pdf:'📄', doc:'📝', docx:'📝', xls:'📊', xlsx:'📊', ppt:'📋', pptx:'📋',
-                    jpg:'🖼', jpeg:'🖼', png:'🖼', gif:'🖼', mp4:'🎬', mp3:'🎵', zip:'🗜', rar:'🗜' };
-      return map[ext] || '📄';
+      const map = {
+        pdf:  '<i class="fa-solid fa-file-pdf" aria-hidden="true"></i>',
+        doc:  '<i class="fa-solid fa-file-word" aria-hidden="true"></i>',
+        docx: '<i class="fa-solid fa-file-word" aria-hidden="true"></i>',
+        xls:  '<i class="fa-solid fa-file-excel" aria-hidden="true"></i>',
+        xlsx: '<i class="fa-solid fa-file-excel" aria-hidden="true"></i>',
+        ppt:  '<i class="fa-solid fa-file-powerpoint" aria-hidden="true"></i>',
+        pptx: '<i class="fa-solid fa-file-powerpoint" aria-hidden="true"></i>',
+        jpg:  '<i class="fa-solid fa-file-image" aria-hidden="true"></i>',
+        jpeg: '<i class="fa-solid fa-file-image" aria-hidden="true"></i>',
+        png:  '<i class="fa-solid fa-file-image" aria-hidden="true"></i>',
+        gif:  '<i class="fa-solid fa-file-image" aria-hidden="true"></i>',
+        mp4:  '<i class="fa-solid fa-file-video" aria-hidden="true"></i>',
+        mp3:  '<i class="fa-solid fa-file-audio" aria-hidden="true"></i>',
+        zip:  '<i class="fa-solid fa-file-zipper" aria-hidden="true"></i>',
+        rar:  '<i class="fa-solid fa-file-zipper" aria-hidden="true"></i>',
+      };
+      return map[ext] || '<i class="fa-solid fa-file" aria-hidden="true"></i>';
     }
 
     // ── Init ──────────────────────────────────────────────────────────
