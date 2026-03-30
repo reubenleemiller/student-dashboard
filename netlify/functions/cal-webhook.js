@@ -17,17 +17,70 @@ const CAL_RESCHEDULE_BASE = process.env.CAL_RESCHEDULE_BASE_URL || 'https://cal.
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function verifySignature(rawBody, signature, secret) {
-  if (!secret) return true; // verification disabled
-  if (!signature) return false;
+/**
+ * Extract HMAC signature from incoming headers.
+ * Checks `x-cal-signature-256` first, then `x-cal-signature` as fallback.
+ * Netlify normalises headers to lowercase, but we also do a case-insensitive
+ * scan to be safe.
+ */
+function getSignatureFromHeaders(headers) {
+  const candidates = ['x-cal-signature-256', 'x-cal-signature'];
+  for (const name of candidates) {
+    if (headers[name]) return headers[name];
+  }
+  // Case-insensitive scan as final fallback
+  const lowerCaseHeaders = {};
+  for (const [k, v] of Object.entries(headers)) lowerCaseHeaders[k.toLowerCase()] = v;
+  for (const name of candidates) {
+    if (lowerCaseHeaders[name]) return lowerCaseHeaders[name];
+  }
+  return null;
+}
+
+/**
+ * Verify HMAC-SHA256 signature.
+ * Accepts both "sha256=<hex>" and bare "<hex>" as the incoming signature value.
+ */
+function verifyHmacSignature(rawBody, signature, secret) {
   const hmac = crypto.createHmac('sha256', secret);
   hmac.update(rawBody, 'utf8');
   const digest = 'sha256=' + hmac.digest('hex');
+  // Normalise incoming value to "sha256=<hex>" so both formats compare equal
+  const normalised = signature.startsWith('sha256=') ? signature : 'sha256=' + signature;
   try {
-    return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
+    return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(normalised));
   } catch {
     return false;
   }
+}
+
+/**
+ * Main authentication check.
+ * 1. If CAL_WEBHOOK_SECRET is not set → bypass (open).
+ * 2. If HMAC signature header is present → verify HMAC.
+ * 3. If no HMAC header but x-webhook-secret header is present → compare shared secret.
+ * 4. Otherwise → fail.
+ */
+function verifyWebhookAuth(rawBody, headers, secret) {
+  if (!secret) return true; // verification disabled
+
+  const hmacSig     = getSignatureFromHeaders(headers);
+  const sharedSecret = headers['x-webhook-secret'] || null;
+
+  if (hmacSig) {
+    return verifyHmacSignature(rawBody, hmacSig, secret);
+  }
+
+  if (sharedSecret) {
+    try {
+      return crypto.timingSafeEqual(Buffer.from(sharedSecret), Buffer.from(secret));
+    } catch {
+      return false;
+    }
+  }
+
+  // No recognisable auth header present
+  return false;
 }
 
 async function supabaseFetch(path, options = {}) {
@@ -168,11 +221,18 @@ exports.handler = async (event) => {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
-  const rawBody   = event.body || '';
-  const signature = event.headers['x-cal-signature-256'] || '';
+  const rawBody = event.body || '';
 
-  if (!verifySignature(rawBody, signature, CAL_WEBHOOK_SECRET)) {
-    console.error('Cal.com webhook signature verification failed');
+  if (!verifyWebhookAuth(rawBody, event.headers, CAL_WEBHOOK_SECRET)) {
+    const headerKeys       = Object.keys(event.headers).join(', ');
+    const hasHmacHeader    = !!getSignatureFromHeaders(event.headers);
+    const hasSharedSecret  = !!event.headers['x-webhook-secret'];
+    console.error(
+      'Cal.com webhook auth failed – ' +
+      `hmac_header_present=${hasHmacHeader}, ` +
+      `shared_secret_header_present=${hasSharedSecret}, ` +
+      `headers=[${headerKeys}]`
+    );
     return { statusCode: 401, body: 'Invalid signature' };
   }
 

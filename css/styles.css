@@ -511,6 +511,9 @@ tbody td { padding: .75rem; vertical-align: middle; }
 .search-bar .form-input { max-width: 300px; }
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
+/* Hide mobile-only elements on desktop by default */
+.mobile-menu-btn { display: none; }
+
 @media (max-width: 768px) {
   :root { --sidebar-w: 0px; }
 

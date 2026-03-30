@@ -125,6 +125,28 @@ netlify dev         # run locally with functions at http://localhost:8888
 2. The database trigger automatically assigns the `admin` role to this email.
 3. After email confirmation, log in — you will be redirected to `/admin.html`.
 
+### 7 · Configure Supabase email confirmation URLs
+
+By default Supabase sends confirmation and password-reset links that point back
+to `localhost`. Once you have deployed to Netlify you must update these to your
+production domain so that users are redirected to the right place.
+
+1. Open your project in the **Supabase Dashboard** and go to
+   **Authentication → URL Configuration**.
+2. Set **Site URL** to your Netlify site domain, e.g.
+   ```
+   https://your-site.netlify.app
+   ```
+3. Under **Redirect URLs** add each page that handles auth callbacks:
+   ```
+   https://your-site.netlify.app/login.html
+   https://your-site.netlify.app/reset-password.html
+   ```
+   If you add a custom domain later, repeat the entries for that domain too.
+
+After saving, all confirmation and password-reset emails will contain links that
+redirect to your Netlify domain instead of `localhost`.
+
 ---
 
 ## Running locally
@@ -163,6 +185,7 @@ ngrok http 8888
 | `SUPABASE_ANON_KEY` | `public-config` function (served to browser at runtime) | Public anon key — never hard-coded in repo |
 | `SUPABASE_SERVICE_ROLE_KEY` | Netlify Functions only | Admin key — never expose to browser |
 | `CAL_WEBHOOK_SECRET` | `netlify/functions/cal-webhook.js` | HMAC secret to verify Cal.com payloads |
+| `ADMIN_EMAIL` | `netlify/functions/admin-delete-user.js` | Admin email address — **required** for the admin-delete-user function |
 
 ---
 

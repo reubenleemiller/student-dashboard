@@ -128,7 +128,7 @@
   <script type="module">
     import { getSupabase }                                  from '/js/supabase-client.js';
     import { requireAdmin, showToast, confirmModal,
-             formatDate, formatFileSize }                   from '/js/auth.js';
+             formatDate, formatFileSize, setBtnLoading }   from '/js/auth.js';
 
     const supabase = await getSupabase();
 
@@ -209,6 +209,7 @@
           <td class="flex gap-2">
             <button class="btn btn-outline btn-sm view-bookings-btn" data-id="${s.id}" data-email="${s.email}" data-name="${s.full_name || s.email}">View Bookings</button>
             <button class="btn btn-ghost   btn-sm view-storage-btn"  data-id="${s.id}" data-email="${s.email}" data-name="${s.full_name || s.email}">Browse Files</button>
+            <button class="btn btn-danger btn-sm delete-student-btn" data-id="${s.id}" data-name="${s.full_name || s.email}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>
           </td>
         </tr>`).join('');
 
@@ -243,6 +244,10 @@
           }, 300);
         });
       });
+
+      wrap.querySelectorAll('.delete-student-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteStudent(btn.dataset.id, btn.dataset.name, btn));
+      });
     }
 
     // Student search
@@ -254,6 +259,35 @@
       );
       renderStudentsTable(filtered);
     });
+
+    async function deleteStudent(userId, studentName, btn) {
+      const confirmed = await confirmModal(
+        `Permanently delete ${studentName}'s account? This removes all their files, bookings, and their login. This cannot be undone.`,
+        'Delete User',
+        true
+      );
+      if (!confirmed) return;
+
+      setBtnLoading(btn, true, 'Deleting…');
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch('/api/admin-delete-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ userId }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Deletion failed');
+        showToast(`${studentName} has been deleted.`, 'success');
+        await loadStudents();
+      } catch (err) {
+        showToast(err.message, 'error');
+        setBtnLoading(btn, false);
+      }
+    }
 
     // ── Bookings ───────────────────────────────────────────────────────
     let currentStudentId   = null;
