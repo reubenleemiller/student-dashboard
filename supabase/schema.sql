@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   reschedule_url       TEXT,
   raw_payload          JSONB,
   archived_by_user     BOOLEAN     NOT NULL DEFAULT FALSE,
+  reschedule_count     INTEGER     NOT NULL DEFAULT 0,
+  completed_at         TIMESTAMPTZ NULL,
   created_at           TIMESTAMPTZ DEFAULT NOW(),
   updated_at           TIMESTAMPTZ DEFAULT NOW()
 );
@@ -249,6 +251,12 @@ CREATE POLICY "Admin can manage invites" ON public.student_invites
 -- Add invited_user_id column if it does not exist yet
 ALTER TABLE public.student_invites
   ADD COLUMN IF NOT EXISTS invited_user_id UUID NULL REFERENCES auth.users(id) ON DELETE SET NULL;
+
+-- Add reschedule_count and completed_at columns to bookings if they do not exist yet
+ALTER TABLE public.bookings
+  ADD COLUMN IF NOT EXISTS reschedule_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.bookings
+  ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ NULL;
 
 -- Remove the old auto-accept logic from handle_new_user (already replaced above).
 -- If the trigger was previously created with that logic, the CREATE OR REPLACE

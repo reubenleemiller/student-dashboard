@@ -284,16 +284,25 @@ async function handleBookingRescheduled(payload) {
   const newUid = payload.uid;
   const oldUid = payload.rescheduleUid || payload.metadata?.rescheduleUid;
 
-  // Mark old booking as rescheduled (best effort)
+  // Fetch old booking to carry the reschedule_count forward
+  let oldRescheduleCount = 0;
   if (oldUid) {
+    const oldRows = await supabaseFetch(
+      `/bookings?cal_booking_id=eq.${encodeURIComponent(oldUid)}&select=reschedule_count&limit=1`
+    ).catch(() => []);
+    if (Array.isArray(oldRows) && oldRows.length) {
+      oldRescheduleCount = oldRows[0].reschedule_count || 0;
+    }
+
+    // Mark old booking as rescheduled and increment its counter (best effort)
     await supabaseFetch(`/bookings?cal_booking_id=eq.${encodeURIComponent(oldUid)}`, {
       method: 'PATCH',
       headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ status: 'rescheduled' }),
+      body: JSON.stringify({ status: 'rescheduled', reschedule_count: oldRescheduleCount + 1 }),
     }).catch(() => {});
   }
 
-  // Upsert the new booking as scheduled
+  // Upsert the new booking as scheduled, inheriting the incremented reschedule_count
   const attendeeEmail = extractAttendeeEmail(payload);
   const userId = attendeeEmail ? await findUserByEmail(attendeeEmail) : null;
   const eventSlug = extractEventSlug(payload);
@@ -316,11 +325,27 @@ async function handleBookingRescheduled(payload) {
     start_time: payload.startTime,
     end_time: payload.endTime,
     status: 'scheduled',
+    reschedule_count: oldRescheduleCount + 1,
     join_url: extractJoinUrl(payload),
     cancel_url: cancelUrl,
     reschedule_url: rescheduleUrl,
     raw_payload: payload,
   });
+}
+
+async function handleBookingEnded(payload) {
+  const uid = payload.uid;
+  if (!uid) return;
+
+  await supabaseFetch(`/bookings?cal_booking_id=eq.${encodeURIComponent(uid)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      raw_payload: payload,
+    }),
+  }).catch(() => {});
 }
 
 // ── main handler ─────────────────────────────────────────────────────────────
@@ -363,6 +388,8 @@ exports.handler = async (event) => {
       await handleBookingCancelled(payload);
     } else if (trigger === 'BOOKING_RESCHEDULED') {
       await handleBookingRescheduled(payload);
+    } else if (trigger === 'BOOKING_MEETING_ENDED') {
+      await handleBookingEnded(payload);
     } else {
       console.log(`Unhandled trigger: ${trigger}`);
     }

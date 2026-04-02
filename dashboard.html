@@ -366,6 +366,21 @@
       });
     });
 
+    function isBookingCompleted(b) {
+      return b.status === 'completed' || (b.status === 'scheduled' && !!b.end_time && new Date(b.end_time) < new Date());
+    }
+
+    function buildBadge(b) {
+      if (isBookingCompleted(b)) {
+        return '<span class="badge badge-completed">Completed</span>';
+      }
+      if (b.status === 'rescheduled' || b.reschedule_count > 0) {
+        const n = b.reschedule_count || 1;
+        return `<span class="badge badge-rescheduled">Rescheduled ×${n}</span>`;
+      }
+      return `<span class="badge badge-${b.status}">${b.status}</span>`;
+    }
+
     async function loadBookings() {
       const wrap = document.getElementById('bookingsTableWrap');
       wrap.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading…</div>';
@@ -401,11 +416,12 @@
 
       const rows = subset.map(b => {
         const st    = formatDate(b.start_time);
-        const badge = `<span class="badge badge-${b.status}">${b.status}</span>`;
+        const badge = buildBadge(b);
+        const completed = isBookingCompleted(b);
         let joinCell    = '<span class="text-muted">–</span>';
         let actionsCell = '';
 
-        if (b.status === 'scheduled') {
+        if (b.status === 'scheduled' && !completed) {
           joinCell = b.join_url
             ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="fa-solid fa-link" aria-hidden="true"></i> Join</a>`
             : '<span class="text-muted">–</span>';
@@ -480,10 +496,10 @@
           header.textContent = date.toLocaleDateString(undefined, { weekday:'long', year:'numeric', month:'long', day:'numeric' });
           body.innerHTML = dayBk.map(b => `
             <div class="flex items-center gap-3 mb-2">
-              <span class="badge badge-${b.status}">${b.status}</span>
+              ${buildBadge(b)}
               <span>${formatDate(b.start_time)}</span>
               <span class="text-muted text-sm">${b.event_type || ''}</span>
-              ${b.status === 'scheduled' && b.join_url ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="fa-solid fa-link" aria-hidden="true"></i> Join</a>` : ''}
+              ${b.status === 'scheduled' && !isBookingCompleted(b) && b.join_url ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="fa-solid fa-link" aria-hidden="true"></i> Join</a>` : ''}
             </div>`).join('');
           detail.classList.remove('hidden');
         });
