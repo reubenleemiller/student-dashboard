@@ -58,3 +58,8 @@
   from = "/api/accept-invite"
   to = "/.netlify/functions/accept-invite"
   status = 200
+
+[[redirects]]
+  from = "/api/auth-check-provider"
+  to = "/.netlify/functions/auth-check-provider"
+  status = 200

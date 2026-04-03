@@ -632,6 +632,12 @@
       if (b.status === 'cancelled') {
         return '<span class="badge badge-cancelled">Cancelled</span>';
       }
+      if (b.status === 'rejected') {
+        return '<span class="badge badge-rejected">Rejected</span>';
+      }
+      if (b.status === 'requested') {
+        return '<span class="badge badge-requested">Requested</span>';
+      }
       if (isBookingCompleted(b)) {
         return '<span class="badge badge-completed">Completed</span>';
       }
@@ -658,11 +664,12 @@
         const studentName = b.profiles?.full_name || b.profiles?.email || b.user_email || '–';
         const badge       = buildBadge(b);
         const completed   = isBookingCompleted(b);
+        const isPending   = b.status === 'requested' || b.status === 'rejected';
         const join        = b.status === 'scheduled' && !completed && b.join_url
           ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="fa-solid fa-link" aria-hidden="true"></i> Join</a>`
           : '<span class="text-muted">–</span>';
         let actions = '';
-        if (b.status === 'scheduled' && !completed) {
+        if (!isPending && b.status === 'scheduled' && !completed) {
           const cancel = b.cancel_url
             ? `<a href="${b.cancel_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Cancel</a>`
             : '';
@@ -670,7 +677,7 @@
             ? `<a href="${b.reschedule_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Reschedule</a>`
             : '';
           actions = `${cancel}${reschedule}`;
-        } else if (b.status === 'cancelled' || completed) {
+        } else if (!isPending && (b.status === 'cancelled' || completed)) {
           actions = `<button class="btn btn-danger btn-sm delete-booking-btn" data-id="${b.id}">Delete</button>`;
         }
         return `

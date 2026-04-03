@@ -324,6 +324,8 @@ tbody td { padding: .75rem; vertical-align: middle; }
 .badge-admin      { background: var(--primary-light); color: var(--primary); }
 .badge-student    { background: #f1f5f9; color: var(--text-muted); }
 .badge-pending    { background: #fef9c3; color: #854d0e; }
+.badge-requested  { background: #ede9fe; color: #5b21b6; }
+.badge-rejected   { background: #fce7f3; color: #9d174d; }
 
 /* ── Calendar ───────────────────────────────────────────────────────── */
 .calendar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }

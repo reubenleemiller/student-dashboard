@@ -376,6 +376,12 @@
       if (b.status === 'cancelled') {
         return '<span class="badge badge-cancelled">Cancelled</span>';
       }
+      if (b.status === 'rejected') {
+        return '<span class="badge badge-rejected">Rejected</span>';
+      }
+      if (b.status === 'requested') {
+        return '<span class="badge badge-requested">Requested</span>';
+      }
       if (isBookingCompleted(b)) {
         return '<span class="badge badge-completed">Completed</span>';
       }
@@ -423,10 +429,11 @@
         const st    = formatDate(b.start_time);
         const badge = buildBadge(b);
         const completed = isBookingCompleted(b);
+        const isPending = b.status === 'requested' || b.status === 'rejected';
         let joinCell    = '<span class="text-muted">–</span>';
         let actionsCell = '';
 
-        if (b.status === 'scheduled' && !completed) {
+        if (!isPending && b.status === 'scheduled' && !completed) {
           joinCell = b.join_url
             ? `<a href="${b.join_url}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="fa-solid fa-link" aria-hidden="true"></i> Join</a>`
             : '<span class="text-muted">–</span>';
@@ -437,7 +444,7 @@
             ? `<a href="${b.reschedule_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Reschedule</a>`
             : '';
           actionsCell = `${cancel}${reschedule}`;
-        } else if (b.status === 'cancelled' || completed) {
+        } else if (!isPending && (b.status === 'cancelled' || completed)) {
           actionsCell = `<button class="btn btn-ghost btn-sm remove-booking-btn" data-id="${b.id}">Remove</button>`;
         }
 

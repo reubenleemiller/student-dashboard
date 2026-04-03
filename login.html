@@ -116,6 +116,30 @@
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
+        // Check if this account uses Google-only sign-in
+        try {
+          const res = await fetch('/api/auth-check-provider', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email }),
+          });
+          if (res.ok) {
+            const info = await res.json();
+            if (info.isGoogleOnly) {
+              showAlert('This account uses Google sign-in. Redirecting…');
+              setBtnLoading(submitBtn, false);
+              setTimeout(async () => {
+                await supabase.auth.signInWithOAuth({
+                  provider: 'google',
+                  options: { redirectTo: `${window.location.origin}/login.html` },
+                });
+              }, 1200);
+              return;
+            }
+          }
+        } catch {
+          // ignore provider-check errors; fall through to show original error
+        }
         showAlert(error.message);
         setBtnLoading(submitBtn, false);
         return;

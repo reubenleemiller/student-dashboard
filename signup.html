@@ -18,6 +18,16 @@
       <div class="card-body">
         <div id="alert" class="alert hidden"></div>
 
+        <!-- Google sign-up -->
+        <button type="button" class="btn btn-outline btn-block btn-lg" id="googleBtn">
+          <i class="fa-brands fa-google" aria-hidden="true"></i>
+          Continue with Google
+        </button>
+
+        <div class="divider" style="margin: 1rem 0; text-align:center; opacity:.7;">
+          <span style="background: var(--card-bg, #fff); padding: 0 .75rem;">or</span>
+        </div>
+
         <form id="signupForm" novalidate>
           <div class="form-group">
             <label for="fullName">Full name</label>
@@ -59,11 +69,32 @@
     const form      = document.getElementById('signupForm');
     const alertBox  = document.getElementById('alert');
     const submitBtn = document.getElementById('submitBtn');
+    const googleBtn = document.getElementById('googleBtn');
 
     function showAlert(msg, type = 'error') {
       alertBox.textContent = msg;
       alertBox.className = `alert alert-${type}`;
     }
+
+    // Google OAuth sign-up
+    googleBtn.addEventListener('click', async () => {
+      showAlert('', 'info');
+      alertBox.classList.add('hidden');
+      setBtnLoading(googleBtn, true, 'Redirecting…');
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/dashboard.html`,
+        },
+      });
+
+      if (error) {
+        showAlert(error.message);
+        setBtnLoading(googleBtn, false);
+      }
+      // On success the browser redirects; no further code runs here.
+    });
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();

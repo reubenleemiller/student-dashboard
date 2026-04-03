@@ -360,6 +360,62 @@ async function handleBookingEnded(body) {
   }).catch(() => {});
 }
 
+async function handleBookingRequested(payload) {
+  const uid = payload.uid;
+  if (!uid) return;
+
+  const attendeeEmail = extractAttendeeEmail(payload);
+  const userId = attendeeEmail ? await findUserByEmail(attendeeEmail) : null;
+  const eventSlug = extractEventSlug(payload);
+
+  const cancelUrl =
+    payload.cancelUrl ||
+    payload.metadata?.cancelUrl ||
+    buildCalCancelUrl(uid, attendeeEmail);
+
+  const rescheduleUrl =
+    payload.rescheduleUrl ||
+    payload.metadata?.rescheduleUrl ||
+    buildCalOverlayRescheduleUrl(uid, attendeeEmail, eventSlug, payload.startTime);
+
+  await upsertBooking({
+    cal_booking_id: uid,
+    user_id: userId,
+    user_email: attendeeEmail,
+    event_type: eventSlug,
+    start_time: payload.startTime,
+    end_time: payload.endTime,
+    status: 'requested',
+    join_url: extractJoinUrl(payload),
+    cancel_url: cancelUrl,
+    reschedule_url: rescheduleUrl,
+    raw_payload: payload,
+  });
+}
+
+async function handleBookingRejected(payload) {
+  const uid = payload.uid;
+  if (!uid) return;
+
+  const attendeeEmail = extractAttendeeEmail(payload);
+  const userId = attendeeEmail ? await findUserByEmail(attendeeEmail) : null;
+  const eventSlug = extractEventSlug(payload);
+
+  await upsertBooking({
+    cal_booking_id: uid,
+    user_id: userId,
+    user_email: attendeeEmail,
+    event_type: eventSlug,
+    start_time: payload.startTime,
+    end_time: payload.endTime,
+    status: 'rejected',
+    join_url: null,
+    cancel_url: null,
+    reschedule_url: null,
+    raw_payload: payload,
+  });
+}
+
 // ── main handler ─────────────────────────────────────────────────────────────
 
 exports.handler = async (event) => {
@@ -402,6 +458,10 @@ exports.handler = async (event) => {
       await handleBookingRescheduled(payload);
     } else if (trigger === 'BOOKING_MEETING_ENDED' || trigger === 'MEETING_ENDED') {
       await handleBookingEnded(parsed);
+    } else if (trigger === 'BOOKING_REQUESTED') {
+      await handleBookingRequested(payload);
+    } else if (trigger === 'BOOKING_REJECTED') {
+      await handleBookingRejected(payload);
     } else {
       console.log(`Unhandled trigger: ${trigger}`);
     }
