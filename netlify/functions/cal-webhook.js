@@ -283,29 +283,32 @@ async function handleBookingCancelled(payload) {
 async function handleBookingRescheduled(payload) {
   const newUid = payload.uid;
   const oldUid = payload.rescheduleUid || payload.metadata?.rescheduleUid;
+  if (!newUid) return;
 
-  // Fetch old booking to carry the reschedule_count forward
-  let oldRescheduleCount = 0;
+  // Idempotency: if new UID already exists, never increment again.
+  const newRows = await supabaseFetch(
+    `/bookings?cal_booking_id=eq.${encodeURIComponent(newUid)}&select=reschedule_count&limit=1`
+  ).catch(() => []);
+  const existingNew = Array.isArray(newRows) && newRows.length ? newRows[0] : null;
+
+  let oldBooking = null;
   if (oldUid) {
     const oldRows = await supabaseFetch(
-      `/bookings?cal_booking_id=eq.${encodeURIComponent(oldUid)}&select=reschedule_count&limit=1`
+      `/bookings?cal_booking_id=eq.${encodeURIComponent(oldUid)}&select=user_id,user_email,event_type,reschedule_count,start_time&limit=1`
     ).catch(() => []);
-    if (Array.isArray(oldRows) && oldRows.length) {
-      oldRescheduleCount = oldRows[0].reschedule_count || 0;
-    }
-
-    // Mark old booking as rescheduled and increment its counter (best effort)
-    await supabaseFetch(`/bookings?cal_booking_id=eq.${encodeURIComponent(oldUid)}`, {
-      method: 'PATCH',
-      headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ status: 'rescheduled', reschedule_count: oldRescheduleCount + 1 }),
-    }).catch(() => {});
+    oldBooking = Array.isArray(oldRows) && oldRows.length ? oldRows[0] : null;
   }
 
+  const oldRescheduleCount = oldBooking?.reschedule_count || 0;
+  const rescheduleCount = existingNew
+    ? (existingNew.reschedule_count || 0)
+    : (oldRescheduleCount + 1);
+
   // Upsert the new booking as scheduled, inheriting the incremented reschedule_count
-  const attendeeEmail = extractAttendeeEmail(payload);
-  const userId = attendeeEmail ? await findUserByEmail(attendeeEmail) : null;
-  const eventSlug = extractEventSlug(payload);
+  const attendeeEmail = extractAttendeeEmail(payload) || oldBooking?.user_email || '';
+  const eventSlug = extractEventSlug(payload) || oldBooking?.event_type || null;
+  let userId = attendeeEmail ? await findUserByEmail(attendeeEmail) : null;
+  if (!userId && oldBooking?.user_id) userId = oldBooking.user_id;
 
   const cancelUrl =
     payload.cancelUrl ||
@@ -325,17 +328,26 @@ async function handleBookingRescheduled(payload) {
     start_time: payload.startTime,
     end_time: payload.endTime,
     status: 'scheduled',
-    reschedule_count: oldRescheduleCount + 1,
+    reschedule_count: rescheduleCount,
     join_url: extractJoinUrl(payload),
     cancel_url: cancelUrl,
     reschedule_url: rescheduleUrl,
     raw_payload: payload,
   });
+
+  if (oldUid && oldUid !== newUid) {
+    await supabaseFetch(`/bookings?cal_booking_id=eq.${encodeURIComponent(oldUid)}`, {
+      method: 'DELETE',
+      headers: { Prefer: 'return=minimal' },
+    }).catch(() => {});
+  }
 }
 
-async function handleBookingEnded(payload) {
-  const uid = payload.uid;
+async function handleBookingEnded(body) {
+  const uid = body?.payload?.uid ?? body?.uid;
   if (!uid) return;
+
+  const rawPayload = body?.payload || body;
 
   await supabaseFetch(`/bookings?cal_booking_id=eq.${encodeURIComponent(uid)}`, {
     method: 'PATCH',
@@ -343,7 +355,7 @@ async function handleBookingEnded(payload) {
     body: JSON.stringify({
       status: 'completed',
       completed_at: new Date().toISOString(),
-      raw_payload: payload,
+      raw_payload: rawPayload,
     }),
   }).catch(() => {});
 }
@@ -388,8 +400,8 @@ exports.handler = async (event) => {
       await handleBookingCancelled(payload);
     } else if (trigger === 'BOOKING_RESCHEDULED') {
       await handleBookingRescheduled(payload);
-    } else if (trigger === 'BOOKING_MEETING_ENDED') {
-      await handleBookingEnded(payload);
+    } else if (trigger === 'BOOKING_MEETING_ENDED' || trigger === 'MEETING_ENDED') {
+      await handleBookingEnded(parsed);
     } else {
       console.log(`Unhandled trigger: ${trigger}`);
     }

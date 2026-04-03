@@ -45,6 +45,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/admin-bulk-delete-bookings"
+  to = "/.netlify/functions/admin-bulk-delete-bookings"
+  status = 200
+
+[[redirects]]
   from = "/api/admin-invite-student"
   to = "/.netlify/functions/admin-invite-student"
   status = 200

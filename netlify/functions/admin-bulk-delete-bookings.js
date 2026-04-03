@@ -1,13 +1,7 @@
-// netlify/functions/admin-delete-booking.js
-// Admin-only endpoint to permanently delete a cancelled or completed booking row.
-// Environment variables required:
-//   SUPABASE_URL              – your Supabase project URL
-//   SUPABASE_SERVICE_ROLE_KEY – service role key
-//
-// NOTE: Admin authorization is role-based (profiles.role === 'admin').
-// Do NOT set an ADMIN_EMAIL env var (Netlify secrets scanning will flag it).
+// netlify/functions/admin-bulk-delete-bookings.js
+// Admin-only endpoint to delete cancelled + completed bookings for one student.
 
-const SUPABASE_URL          = process.env.SUPABASE_URL;
+const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL) {
@@ -39,7 +33,6 @@ async function supabaseFetch(path, options = {}) {
   return data;
 }
 
-// Verify the caller's JWT and return their user record
 async function verifyCallerJwt(jwt) {
   const url = `${SUPABASE_URL}/auth/v1/user`;
   const res = await fetch(url, {
@@ -52,10 +45,9 @@ async function verifyCallerJwt(jwt) {
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   if (!res.ok) throw new Error(`Invalid token: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
-  return data; // { id, email, ... }
+  return data;
 }
 
-// Fetch caller's role from profiles table (service role bypasses RLS)
 async function getProfileRole(userId) {
   const rows = await supabaseFetch(`/profiles?id=eq.${encodeURIComponent(userId)}&select=role&limit=1`);
   if (Array.isArray(rows) && rows.length) return rows[0].role || null;
@@ -68,7 +60,6 @@ exports.handler = async (event) => {
       return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
-    // Extract admin JWT from Authorization header
     const authHeader =
       event.headers?.authorization ||
       event.headers?.Authorization ||
@@ -79,7 +70,6 @@ exports.handler = async (event) => {
       return { statusCode: 401, body: JSON.stringify({ error: 'Missing authorization token' }) };
     }
 
-    // Verify caller JWT
     let caller;
     try {
       caller = await verifyCallerJwt(token);
@@ -87,13 +77,11 @@ exports.handler = async (event) => {
       return { statusCode: 401, body: JSON.stringify({ error: err.message }) };
     }
 
-    // Verify caller is admin by role
     const callerRole = await getProfileRole(caller.id);
     if (callerRole !== 'admin') {
       return { statusCode: 403, body: JSON.stringify({ error: 'Forbidden: admin access only' }) };
     }
 
-    // Parse request body
     let body = {};
     try {
       body = JSON.parse(event.body || '{}');
@@ -101,32 +89,26 @@ exports.handler = async (event) => {
       return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON body' }) };
     }
 
-    const { bookingId } = body;
-    if (!bookingId || typeof bookingId !== 'string') {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid bookingId' }) };
+    const { userId } = body;
+    if (!userId || typeof userId !== 'string') {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid userId' }) };
     }
 
-    // Fetch the booking to confirm it is a cleanup-eligible status
-    const rows = await supabaseFetch(
-      `/bookings?id=eq.${encodeURIComponent(bookingId)}&select=id,status&limit=1`
+    const matches = await supabaseFetch(
+      `/bookings?user_id=eq.${encodeURIComponent(userId)}&status=in.(cancelled,completed)&select=id`
     );
+    const deletedCount = Array.isArray(matches) ? matches.length : 0;
 
-    if (!Array.isArray(rows) || !rows.length) {
-      return { statusCode: 404, body: JSON.stringify({ error: 'Booking not found' }) };
+    if (deletedCount > 0) {
+      await supabaseFetch(
+        `/bookings?user_id=eq.${encodeURIComponent(userId)}&status=in.(cancelled,completed)`,
+        { method: 'DELETE', headers: { Prefer: 'return=minimal' } }
+      );
     }
 
-    if (!['cancelled', 'completed'].includes(rows[0].status)) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Only cancelled or completed bookings can be deleted' }) };
-    }
-
-    console.log(`Admin ${caller.id} deleting booking ${bookingId}`);
-
-    // Permanently delete the booking row
-    await supabaseFetch(`/bookings?id=eq.${encodeURIComponent(bookingId)}`, { method: 'DELETE' });
-
-    return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+    return { statusCode: 200, body: JSON.stringify({ deletedCount }) };
   } catch (err) {
-    console.error('admin-delete-booking error:', err);
+    console.error('admin-bulk-delete-bookings error:', err);
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 };

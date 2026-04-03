@@ -367,14 +367,19 @@
     });
 
     function isBookingCompleted(b) {
-      return b.status === 'completed' || (b.status === 'scheduled' && !!b.end_time && new Date(b.end_time) < new Date());
+      if (b.status === 'cancelled') return false;
+      if (b.status === 'completed' || !!b.completed_at) return true;
+      return !!b.end_time && new Date(b.end_time) < new Date();
     }
 
     function buildBadge(b) {
+      if (b.status === 'cancelled') {
+        return '<span class="badge badge-cancelled">Cancelled</span>';
+      }
       if (isBookingCompleted(b)) {
         return '<span class="badge badge-completed">Completed</span>';
       }
-      if (b.status === 'rescheduled' || b.reschedule_count > 0) {
+      if ((b.reschedule_count || 0) > 0) {
         const n = b.reschedule_count || 1;
         return `<span class="badge badge-rescheduled">Rescheduled ×${n}</span>`;
       }
@@ -432,8 +437,8 @@
             ? `<a href="${b.reschedule_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Reschedule</a>`
             : '';
           actionsCell = `${cancel}${reschedule}`;
-        } else if (b.status === 'cancelled') {
-          actionsCell = `<button class="btn btn-ghost btn-sm remove-booking-btn" data-id="${b.id}">Remove</button>`;
+        } else if (b.status === 'cancelled' || completed) {
+          actionsCell = `<button class="btn btn-ghost btn-sm remove-booking-btn" data-id="${b.id}">Remove from view</button>`;
         }
 
         return `
@@ -464,7 +469,7 @@
 
     async function removeBooking(bookingId, btn) {
       const confirmed = await confirmModal(
-        'Hide this cancelled booking from your view? It will no longer appear in your list. Contact support if you need to see it again.',
+        'Hide this booking from your view? It will no longer appear in your list. Contact support if you need to see it again.',
         'Remove'
       );
       if (!confirmed) return;

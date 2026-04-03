@@ -69,6 +69,9 @@
             <h1 id="bookingsTitle">All Bookings</h1>
             <p id="bookingsSubtitle">Showing all student bookings.</p>
           </div>
+          <div id="bookingsActions" class="hidden flex gap-2" style="flex-wrap:wrap">
+            <button class="btn btn-danger btn-sm" id="bulkDeleteBookingsBtn">Delete completed + cancelled</button>
+          </div>
           <div id="bookingsBack" class="hidden">
             <button class="btn btn-ghost btn-sm" id="backToStudentsBtn">&larr; Back to Students</button>
           </div>
@@ -583,6 +586,10 @@
       showSection('students');
     });
 
+    document.getElementById('bulkDeleteBookingsBtn').addEventListener('click', () => {
+      bulkDeleteBookingsForStudent();
+    });
+
     async function loadAllBookings(studentId = null, studentName = null) {
       currentStudentId   = studentId;
       currentStudentName = studentName;
@@ -591,10 +598,12 @@
       if (studentId) {
         document.getElementById('bookingsTitle').textContent = `Bookings – ${studentName}`;
         document.getElementById('bookingsSubtitle').textContent = `Showing bookings for this student.`;
+        document.getElementById('bookingsActions').classList.remove('hidden');
         document.getElementById('bookingsBack').classList.remove('hidden');
       } else {
         document.getElementById('bookingsTitle').textContent = 'All Bookings';
         document.getElementById('bookingsSubtitle').textContent = 'Showing all student bookings.';
+        document.getElementById('bookingsActions').classList.add('hidden');
         document.getElementById('bookingsBack').classList.add('hidden');
       }
 
@@ -614,14 +623,19 @@
     }
 
     function isBookingCompleted(b) {
-      return b.status === 'completed' || (b.status === 'scheduled' && !!b.end_time && new Date(b.end_time) < new Date());
+      if (b.status === 'cancelled') return false;
+      if (b.status === 'completed' || !!b.completed_at) return true;
+      return !!b.end_time && new Date(b.end_time) < new Date();
     }
 
     function buildBadge(b) {
+      if (b.status === 'cancelled') {
+        return '<span class="badge badge-cancelled">Cancelled</span>';
+      }
       if (isBookingCompleted(b)) {
         return '<span class="badge badge-completed">Completed</span>';
       }
-      if (b.status === 'rescheduled' || b.reschedule_count > 0) {
+      if ((b.reschedule_count || 0) > 0) {
         const n = b.reschedule_count || 1;
         return `<span class="badge badge-rescheduled">Rescheduled ×${n}</span>`;
       }
@@ -656,7 +670,7 @@
             ? `<a href="${b.reschedule_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Reschedule</a>`
             : '';
           actions = `${cancel}${reschedule}`;
-        } else if (b.status === 'cancelled') {
+        } else if (b.status === 'cancelled' || completed) {
           actions = `<button class="btn btn-danger btn-sm delete-booking-btn" data-id="${b.id}">Delete</button>`;
         }
         return `
@@ -688,7 +702,7 @@
 
     async function deleteBooking(bookingId, btn) {
       const confirmed = await confirmModal(
-        'Permanently delete this cancelled booking? This cannot be undone.',
+        'Permanently delete this booking? Only completed/cancelled bookings can be deleted. This cannot be undone.',
         'Delete',
         true
       );
@@ -710,6 +724,41 @@
         await loadAllBookings(currentStudentId, currentStudentName);
       } catch (err) {
         showToast(err.message, 'error');
+        setBtnLoading(btn, false);
+      }
+    }
+
+    async function bulkDeleteBookingsForStudent() {
+      if (!currentStudentId) return;
+
+      const confirmed = await confirmModal(
+        'Delete all completed and cancelled bookings for this student? This cannot be undone.',
+        'Delete completed + cancelled',
+        true
+      );
+      if (!confirmed) return;
+
+      const btn = document.getElementById('bulkDeleteBookingsBtn');
+      setBtnLoading(btn, true, 'Deleting…');
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch('/api/admin-bulk-delete-bookings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ userId: currentStudentId }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Bulk deletion failed');
+
+        showToast(`Deleted ${json.deletedCount || 0} bookings.`, 'success');
+        await loadAllBookings(currentStudentId, currentStudentName);
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
         setBtnLoading(btn, false);
       }
     }
