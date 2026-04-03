@@ -225,7 +225,7 @@ async function handleBookingCancelled(payload) {
 
   // Update status if it exists
   const rows = await supabaseFetch(
-    `/bookings?cal_booking_id=eq.${encodeURIComponent(uid)}&select=id, user_email, event_type, start_time&limit=1`
+    `/bookings?cal_booking_id=eq.${encodeURIComponent(uid)}&select=id,user_id,user_email,event_type,start_time&limit=1`
   ).catch(() => []);
 
   if (Array.isArray(rows) && rows.length) {
@@ -257,6 +257,12 @@ async function handleBookingCancelled(payload) {
         raw_payload: payload,
       }),
     });
+
+    // Recurring cancellation propagation: mark sibling occurrences as cancelled too
+    if (payload.recurringEvent && payload.bookingId) {
+      const existingUserId = existing.user_id || null;
+      await propagateRecurringCancellation(payload, existingUserId, attendeeEmail, uid);
+    }
     return;
   }
 
@@ -284,6 +290,11 @@ async function handleBookingCancelled(payload) {
       buildCalOverlayRescheduleUrl(uid, attendeeEmail, eventSlug, payload.startTime),
     raw_payload: payload,
   });
+
+  // Recurring cancellation propagation: mark sibling occurrences as cancelled too
+  if (payload.recurringEvent && payload.bookingId) {
+    await propagateRecurringCancellation(payload, userId, attendeeEmail, uid);
+  }
 }
 
 async function handleBookingRescheduled(payload) {
@@ -582,7 +593,6 @@ async function propagateRecurringAccepted(payload, userId, attendeeEmail, accept
 
   const patchBody = { status: 'scheduled' };
   if (acceptedJoinUrl) patchBody.join_url = acceptedJoinUrl;
-
   await supabaseFetch(
     `/bookings?id=in.(${siblingIds.join(',')})`,
     {
@@ -596,6 +606,91 @@ async function propagateRecurringAccepted(payload, userId, attendeeEmail, accept
 
   console.log(
     `Recurring accepted propagated: updated ${siblingIds.length} sibling booking(s) to scheduled for uid=${acceptedUid}`
+  );
+}
+
+async function propagateRecurringCancellation(payload, userId, attendeeEmail, cancelledUid) {
+  const cancelledBookingId = payload.bookingId;
+  const cancelledEventTypeId = payload.eventTypeId;
+  const cancelledStartTime = new Date(payload.startTime);
+  const cancelledEndTime = new Date(payload.endTime);
+  const cancelledDurationMs = cancelledEndTime - cancelledStartTime;
+  const cancelledMinuteOfDay =
+    cancelledStartTime.getUTCHours() * 60 + cancelledStartTime.getUTCMinutes();
+
+  // Build user filter; prefer user_id, fall back to user_email
+  let userFilter;
+  if (userId) {
+    userFilter = `user_id=eq.${encodeURIComponent(userId)}`;
+  } else if (attendeeEmail) {
+    userFilter = `user_email=eq.${encodeURIComponent(attendeeEmail)}`;
+  } else {
+    return;
+  }
+
+  if (!cancelledEventTypeId) return;
+
+  // Fetch candidate bookings: same user, same or future start_time, still pending-ish
+  // Search within 90 days to cover typical recurring-series lengths (e.g. 12 weekly sessions ≈ 84 days)
+  const RECURRING_CANCELLATION_WINDOW_DAYS = 90;
+  const windowEnd = new Date(
+    cancelledStartTime.getTime() + RECURRING_CANCELLATION_WINDOW_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  const candidates = await supabaseFetch(
+    `/bookings?${userFilter}` +
+    `&cal_booking_id=neq.${encodeURIComponent(cancelledUid)}` +
+    `&start_time=gte.${encodeURIComponent(payload.startTime)}` +
+    `&start_time=lte.${encodeURIComponent(windowEnd)}` +
+    `&status=in.(scheduled,requested)` +
+    `&select=id,start_time,end_time,raw_payload`
+  ).catch(() => []);
+
+  if (!Array.isArray(candidates) || !candidates.length) return;
+
+  // Cal.com assigns consecutive numeric bookingIds to occurrences created in the same batch.
+  // A window of ±10 is broad enough to catch all occurrences in a typical series while
+  // still being narrow enough to avoid matching unrelated bookings from other students.
+  const BOOKING_ID_WINDOW = 10;
+  const siblingIds = [];
+
+  for (const c of candidates) {
+    const raw = c.raw_payload || {};
+
+    // bookingId must be within ±10 of the cancelled payload's bookingId
+    const cBookingId = typeof raw.bookingId === 'number' ? raw.bookingId : null;
+    if (cBookingId === null || Math.abs(cBookingId - cancelledBookingId) > BOOKING_ID_WINDOW) continue;
+
+    // eventTypeId must match
+    if (raw.eventTypeId !== cancelledEventTypeId) continue;
+
+    // Same time-of-day (UTC hour + minute)
+    const cStart = new Date(c.start_time);
+    const cMinuteOfDay = cStart.getUTCHours() * 60 + cStart.getUTCMinutes();
+    if (cMinuteOfDay !== cancelledMinuteOfDay) continue;
+
+    // Same duration
+    const cEnd = new Date(c.end_time);
+    if ((cEnd - cStart) !== cancelledDurationMs) continue;
+
+    siblingIds.push(c.id);
+  }
+
+  if (!siblingIds.length) return;
+
+  await supabaseFetch(
+    `/bookings?id=in.(${siblingIds.join(',')})`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ status: 'cancelled' }),
+    }
+  ).catch((err) => {
+    console.error('propagateRecurringCancellation: failed to update siblings:', err);
+  });
+
+  console.log(
+    `Recurring cancellation propagated: updated ${siblingIds.length} sibling booking(s) to cancelled for uid=${cancelledUid}`
   );
 }
 
