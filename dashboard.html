@@ -438,7 +438,7 @@
             : '';
           actionsCell = `${cancel}${reschedule}`;
         } else if (b.status === 'cancelled' || completed) {
-          actionsCell = `<button class="btn btn-ghost btn-sm remove-booking-btn" data-id="${b.id}">Remove from view</button>`;
+          actionsCell = `<button class="btn btn-ghost btn-sm remove-booking-btn" data-id="${b.id}">Remove</button>`;
         }
 
         return `

@@ -70,7 +70,7 @@
             <p id="bookingsSubtitle">Showing all student bookings.</p>
           </div>
           <div id="bookingsActions" class="hidden flex gap-2" style="flex-wrap:wrap">
-            <button class="btn btn-danger btn-sm" id="bulkDeleteBookingsBtn">Delete completed + cancelled</button>
+            <button class="btn btn-danger btn-sm" id="bulkDeleteBookingsBtn">Bulk Delete</button>
           </div>
           <div id="bookingsBack" class="hidden">
             <button class="btn btn-ghost btn-sm" id="backToStudentsBtn">&larr; Back to Students</button>
@@ -733,7 +733,7 @@
 
       const confirmed = await confirmModal(
         'Delete all completed and cancelled bookings for this student? This cannot be undone.',
-        'Delete completed + cancelled',
+        'Bulk Delete',
         true
       );
       if (!confirmed) return;
