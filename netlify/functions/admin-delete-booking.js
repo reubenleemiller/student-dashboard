@@ -1,5 +1,5 @@
 // netlify/functions/admin-delete-booking.js
-// Admin-only endpoint to permanently delete a cancelled or completed booking row.
+// Admin-only endpoint to permanently delete a cancelled, completed, or rejected booking row.
 // Environment variables required:
 //   SUPABASE_URL              – your Supabase project URL
 //   SUPABASE_SERVICE_ROLE_KEY – service role key
@@ -115,8 +115,8 @@ exports.handler = async (event) => {
       return { statusCode: 404, body: JSON.stringify({ error: 'Booking not found' }) };
     }
 
-    if (!['cancelled', 'completed'].includes(rows[0].status)) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Only cancelled or completed bookings can be deleted' }) };
+    if (!['cancelled', 'completed', 'rejected'].includes(rows[0].status)) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Only cancelled, completed, or rejected bookings can be deleted' }) };
     }
 
     console.log(`Admin ${caller.id} deleting booking ${bookingId}`);

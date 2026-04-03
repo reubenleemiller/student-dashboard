@@ -677,7 +677,7 @@
             ? `<a href="${b.reschedule_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Reschedule</a>`
             : '';
           actions = `${cancel}${reschedule}`;
-        } else if (!isPending && (b.status === 'cancelled' || completed)) {
+        } else if (b.status === 'rejected' || (!isPending && (b.status === 'cancelled' || completed))) {
           actions = `<button class="btn btn-danger btn-sm delete-booking-btn" data-id="${b.id}">Delete</button>`;
         }
         return `
@@ -709,7 +709,7 @@
 
     async function deleteBooking(bookingId, btn) {
       const confirmed = await confirmModal(
-        'Permanently delete this booking? Only completed/cancelled bookings can be deleted. This cannot be undone.',
+        'Permanently delete this booking? Only completed, cancelled, or rejected bookings can be deleted. This cannot be undone.',
         'Delete',
         true
       );
@@ -739,7 +739,7 @@
       if (!currentStudentId) return;
 
       const confirmed = await confirmModal(
-        'Delete all completed and cancelled bookings for this student? This cannot be undone.',
+        'Delete all completed, cancelled, and rejected bookings for this student? This cannot be undone.',
         'Bulk Delete',
         true
       );

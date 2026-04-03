@@ -444,7 +444,7 @@
             ? `<a href="${b.reschedule_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Reschedule</a>`
             : '';
           actionsCell = `${cancel}${reschedule}`;
-        } else if (!isPending && (b.status === 'cancelled' || completed)) {
+        } else if (b.status === 'rejected' || (!isPending && (b.status === 'cancelled' || completed))) {
           actionsCell = `<button class="btn btn-ghost btn-sm remove-booking-btn" data-id="${b.id}">Remove</button>`;
         }
 

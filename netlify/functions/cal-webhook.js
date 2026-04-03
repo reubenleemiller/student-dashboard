@@ -414,6 +414,94 @@ async function handleBookingRejected(payload) {
     reschedule_url: null,
     raw_payload: payload,
   });
+
+  // Recurring rejection propagation: mark sibling occurrences as rejected too
+  if (payload.recurringEvent && payload.bookingId) {
+    await propagateRecurringRejection(payload, userId, attendeeEmail, uid);
+  }
+}
+
+async function propagateRecurringRejection(payload, userId, attendeeEmail, rejectedUid) {
+  const rejectedBookingId  = payload.bookingId;
+  const rejectedEventTypeId = payload.eventTypeId;
+  const rejectedStartTime  = new Date(payload.startTime);
+  const rejectedEndTime    = new Date(payload.endTime);
+  const rejectedDurationMs = rejectedEndTime - rejectedStartTime;
+  const rejectedMinuteOfDay =
+    rejectedStartTime.getUTCHours() * 60 + rejectedStartTime.getUTCMinutes();
+
+  // Build user filter; prefer user_id, fall back to user_email
+  let userFilter;
+  if (userId) {
+    userFilter = `user_id=eq.${encodeURIComponent(userId)}`;
+  } else if (attendeeEmail) {
+    userFilter = `user_email=eq.${encodeURIComponent(attendeeEmail)}`;
+  } else {
+    return;
+  }
+
+  // Fetch candidate bookings: same user, same or future start_time, still pending
+  // Search within 90 days to cover typical recurring-series lengths (e.g. 12 weekly sessions ≈ 84 days)
+  const RECURRING_REJECTION_WINDOW_DAYS = 90;
+  const windowEnd = new Date(
+    rejectedStartTime.getTime() + RECURRING_REJECTION_WINDOW_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  const candidates = await supabaseFetch(
+    `/bookings?${userFilter}` +
+    `&cal_booking_id=neq.${encodeURIComponent(rejectedUid)}` +
+    `&start_time=gte.${encodeURIComponent(payload.startTime)}` +
+    `&start_time=lte.${encodeURIComponent(windowEnd)}` +
+    `&status=in.(scheduled,requested)` +
+    `&select=id,start_time,end_time,raw_payload`
+  ).catch(() => []);
+
+  if (!Array.isArray(candidates) || !candidates.length) return;
+
+  // Cal.com assigns consecutive numeric bookingIds to occurrences created in the same batch.
+  // A window of ±10 is broad enough to catch all occurrences in a typical series while
+  // still being narrow enough to avoid matching unrelated bookings from other students.
+  const BOOKING_ID_WINDOW = 10;
+  const siblingIds = [];
+
+  for (const c of candidates) {
+    const raw = c.raw_payload || {};
+
+    // bookingId must be within ±10 of the rejected payload's bookingId
+    const cBookingId = typeof raw.bookingId === 'number' ? raw.bookingId : null;
+    if (cBookingId === null || Math.abs(cBookingId - rejectedBookingId) > BOOKING_ID_WINDOW) continue;
+
+    // eventTypeId must match (if present)
+    if (rejectedEventTypeId && raw.eventTypeId !== rejectedEventTypeId) continue;
+
+    // Same time-of-day (UTC hour + minute)
+    const cStart = new Date(c.start_time);
+    const cMinuteOfDay = cStart.getUTCHours() * 60 + cStart.getUTCMinutes();
+    if (cMinuteOfDay !== rejectedMinuteOfDay) continue;
+
+    // Same duration
+    const cEnd = new Date(c.end_time);
+    if ((cEnd - cStart) !== rejectedDurationMs) continue;
+
+    siblingIds.push(c.id);
+  }
+
+  if (!siblingIds.length) return;
+
+  await supabaseFetch(
+    `/bookings?id=in.(${siblingIds.join(',')})`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ status: 'rejected' }),
+    }
+  ).catch((err) => {
+    console.error('propagateRecurringRejection: failed to update siblings:', err);
+  });
+
+  console.log(
+    `Recurring rejection propagated: updated ${siblingIds.length} sibling booking(s) to rejected for uid=${rejectedUid}`
+  );
 }
 
 // ── main handler ─────────────────────────────────────────────────────────────

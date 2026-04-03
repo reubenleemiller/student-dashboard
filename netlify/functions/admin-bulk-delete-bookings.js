@@ -1,5 +1,5 @@
 // netlify/functions/admin-bulk-delete-bookings.js
-// Admin-only endpoint to delete cancelled + completed bookings for one student.
+// Admin-only endpoint to delete cancelled, completed, and rejected bookings for one student.
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -95,13 +95,13 @@ exports.handler = async (event) => {
     }
 
     const matches = await supabaseFetch(
-      `/bookings?user_id=eq.${encodeURIComponent(userId)}&status=in.(cancelled,completed)&select=id`
+      `/bookings?user_id=eq.${encodeURIComponent(userId)}&status=in.(cancelled,completed,rejected)&select=id`
     );
     const deletedCount = Array.isArray(matches) ? matches.length : 0;
 
     if (deletedCount > 0) {
       await supabaseFetch(
-        `/bookings?user_id=eq.${encodeURIComponent(userId)}&status=in.(cancelled,completed)`,
+        `/bookings?user_id=eq.${encodeURIComponent(userId)}&status=in.(cancelled,completed,rejected)`,
         { method: 'DELETE', headers: { Prefer: 'return=minimal' } }
       );
     }
