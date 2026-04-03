@@ -187,6 +187,7 @@ async function handleBookingCreated(payload) {
 
   const uid = payload.uid;
   const eventSlug = extractEventSlug(payload);
+  const calStatus = String(payload?.status || '').toUpperCase();
 
   const cancelUrl =
     payload.cancelUrl ||
@@ -211,6 +212,11 @@ async function handleBookingCreated(payload) {
     reschedule_url: rescheduleUrl,
     raw_payload: payload,
   });
+
+  // Recurring acceptance propagation: mark sibling occurrences as scheduled too
+  if (calStatus === 'ACCEPTED' && payload.recurringEvent && payload.bookingId) {
+    await propagateRecurringAccepted(payload, userId, attendeeEmail, uid);
+  }
 }
 
 async function handleBookingCancelled(payload) {
@@ -501,6 +507,95 @@ async function propagateRecurringRejection(payload, userId, attendeeEmail, rejec
 
   console.log(
     `Recurring rejection propagated: updated ${siblingIds.length} sibling booking(s) to rejected for uid=${rejectedUid}`
+  );
+}
+
+async function propagateRecurringAccepted(payload, userId, attendeeEmail, acceptedUid) {
+  const acceptedBookingId = payload.bookingId;
+  const acceptedEventTypeId = payload.eventTypeId;
+  const acceptedStartTime = new Date(payload.startTime);
+  const acceptedEndTime = new Date(payload.endTime);
+  const acceptedDurationMs = acceptedEndTime - acceptedStartTime;
+  const acceptedMinuteOfDay =
+    acceptedStartTime.getUTCHours() * 60 + acceptedStartTime.getUTCMinutes();
+  const acceptedJoinUrl = extractJoinUrl(payload);
+
+  // Build user filter; prefer user_id, fall back to user_email
+  let userFilter;
+  if (userId) {
+    userFilter = `user_id=eq.${encodeURIComponent(userId)}`;
+  } else if (attendeeEmail) {
+    userFilter = `user_email=eq.${encodeURIComponent(attendeeEmail)}`;
+  } else {
+    return;
+  }
+
+  if (!acceptedEventTypeId) return;
+
+  // Fetch candidate bookings: same user, same or future start_time, still requested
+  // Search within 90 days to cover typical recurring-series lengths (e.g. 12 weekly sessions ≈ 84 days)
+  const RECURRING_ACCEPTED_WINDOW_DAYS = 90;
+  const windowEnd = new Date(
+    acceptedStartTime.getTime() + RECURRING_ACCEPTED_WINDOW_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  const candidates = await supabaseFetch(
+    `/bookings?${userFilter}` +
+    `&cal_booking_id=neq.${encodeURIComponent(acceptedUid)}` +
+    `&start_time=gte.${encodeURIComponent(payload.startTime)}` +
+    `&start_time=lte.${encodeURIComponent(windowEnd)}` +
+    `&status=eq.requested` +
+    `&select=id,start_time,end_time,raw_payload`
+  ).catch(() => []);
+
+  if (!Array.isArray(candidates) || !candidates.length) return;
+
+  // Cal.com assigns consecutive numeric bookingIds to occurrences created in the same batch.
+  // A window of ±10 is broad enough to catch all occurrences in a typical series while
+  // still being narrow enough to avoid matching unrelated bookings from other students.
+  const BOOKING_ID_WINDOW = 10;
+  const siblingIds = [];
+
+  for (const c of candidates) {
+    const raw = c.raw_payload || {};
+
+    // bookingId must be within ±10 of the accepted payload's bookingId
+    const cBookingId = typeof raw.bookingId === 'number' ? raw.bookingId : null;
+    if (cBookingId === null || Math.abs(cBookingId - acceptedBookingId) > BOOKING_ID_WINDOW) continue;
+
+    // eventTypeId must match
+    if (raw.eventTypeId !== acceptedEventTypeId) continue;
+
+    // Same time-of-day (UTC hour + minute)
+    const cStart = new Date(c.start_time);
+    const cMinuteOfDay = cStart.getUTCHours() * 60 + cStart.getUTCMinutes();
+    if (cMinuteOfDay !== acceptedMinuteOfDay) continue;
+
+    // Same duration
+    const cEnd = new Date(c.end_time);
+    if ((cEnd - cStart) !== acceptedDurationMs) continue;
+
+    siblingIds.push(c.id);
+  }
+
+  if (!siblingIds.length) return;
+
+  const patchBody = { status: 'scheduled' };
+  if (acceptedJoinUrl) patchBody.join_url = acceptedJoinUrl;
+
+  await supabaseFetch(
+    `/bookings?id=in.(${siblingIds.join(',')})`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify(patchBody),
+    }
+  ).catch((err) => {
+    console.error('propagateRecurringAccepted: failed to update siblings:', err);
+  });
+
+  console.log(
+    `Recurring accepted propagated: updated ${siblingIds.length} sibling booking(s) to scheduled for uid=${acceptedUid}`
   );
 }
 
