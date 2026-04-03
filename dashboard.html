@@ -401,7 +401,7 @@
         .select('*')
         .eq('user_id', user.id)
         .eq('archived_by_user', false)
-        .order('start_time', { ascending: false });
+        .order('start_time', { ascending: true });
 
       if (error) {
         wrap.innerHTML = `<div class="alert alert-error m-4">${error.message}</div>`;

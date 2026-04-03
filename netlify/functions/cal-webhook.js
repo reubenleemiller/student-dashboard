@@ -201,7 +201,7 @@ async function handleBookingCreated(payload) {
 
   await upsertBooking({
     cal_booking_id: uid,
-    user_id: userId,
+    ...(userId !== null ? { user_id: userId } : {}),
     user_email: attendeeEmail,
     event_type: eventSlug,
     start_time: payload.startTime,
@@ -247,6 +247,12 @@ async function handleBookingCancelled(payload) {
       payload.metadata?.rescheduleUrl ||
       buildCalOverlayRescheduleUrl(uid, attendeeEmail, eventSlug, startTime);
 
+    // Backfill user_id if it is currently NULL but we can resolve it from email
+    let resolvedUserId = existing.user_id ?? null;
+    if (resolvedUserId === null && attendeeEmail) {
+      resolvedUserId = await findUserByEmail(attendeeEmail);
+    }
+
     await supabaseFetch(`/bookings?cal_booking_id=eq.${encodeURIComponent(uid)}`, {
       method: 'PATCH',
       headers: { Prefer: 'return=minimal' },
@@ -255,6 +261,7 @@ async function handleBookingCancelled(payload) {
         cancel_url: cancelUrl,
         reschedule_url: rescheduleUrl,
         raw_payload: payload,
+        ...(resolvedUserId ? { user_id: resolvedUserId } : {}),
       }),
     });
 
@@ -397,7 +404,7 @@ async function handleBookingRequested(payload) {
 
   await upsertBooking({
     cal_booking_id: uid,
-    user_id: userId,
+    ...(userId !== null ? { user_id: userId } : {}),
     user_email: attendeeEmail,
     event_type: eventSlug,
     start_time: payload.startTime,
@@ -420,7 +427,7 @@ async function handleBookingRejected(payload) {
 
   await upsertBooking({
     cal_booking_id: uid,
-    user_id: userId,
+    ...(userId !== null ? { user_id: userId } : {}),
     user_email: attendeeEmail,
     event_type: eventSlug,
     start_time: payload.startTime,
