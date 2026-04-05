@@ -622,8 +622,10 @@
   // ── Load messages ─────────────────────────────────────────────────────
   async function loadMessages(markRead = false, showLoading = false) {
     try {
-      _state.loading = true;
-      if (showLoading && _state.open) renderMessages();
+      if (showLoading) {
+        _state.loading = true;
+        if (_state.open) renderMessages();
+      }
       const ep = (markRead && _state.open)
         ? 'support-messages?mark_read=1'
         : 'support-messages';
@@ -658,8 +660,10 @@
     } catch (err) {
       console.warn('[support-widget] loadMessages error:', err);
     } finally {
-      _state.loading = false;
-      if (showLoading && _state.open) renderMessages();
+      if (showLoading) {
+        _state.loading = false;
+        if (_state.open) renderMessages();
+      }
     }
   }
 

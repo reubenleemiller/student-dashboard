@@ -424,9 +424,9 @@ async function loadConversationsInternal(keepSelection = false, showLoading = tr
   renderConversationList();
 
   if (keepSelection && state.currentConversationId) {
-    await loadConversationThread(state.currentConversationId, true);
+    await loadConversationThread(state.currentConversationId, true, showLoading);
   } else if (!state.currentConversationId && state.conversations.length) {
-    await loadConversationThread(state.conversations[0].id, true);
+    await loadConversationThread(state.conversations[0].id, true, showLoading);
   }
 }
 
@@ -542,7 +542,7 @@ function renderConversationList() {
   });
 }
 
-async function loadConversationThread(conversationId, forceRefresh = false) {
+async function loadConversationThread(conversationId, forceRefresh = false, showLoading = true) {
   if (!conversationId) return;
   const previousConversationId = state.currentConversationId;
   if (state.typingActive && previousConversationId && previousConversationId !== conversationId) {
@@ -552,7 +552,7 @@ async function loadConversationThread(conversationId, forceRefresh = false) {
   state.currentConversationId = conversationId;
 
   const threadWrap = document.getElementById('supportThreadWrap');
-  if (threadWrap) {
+  if (threadWrap && showLoading) {
     threadWrap.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading conversation…</div>';
   }
 
