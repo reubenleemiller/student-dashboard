@@ -32,6 +32,7 @@
     userName:       null,
     adminTypingAt:  null,
     unread:         0,
+    loading:        false,
     isTyping:       false,
     typingTimer:    null,
     pollTimer:      null,
@@ -296,6 +297,24 @@
         font-size: .8rem; gap: .5rem; padding: 1.5rem 1rem;
       }
       .sw-empty i { font-size: 2.25rem; color: var(--primary-light, #edf7eb); margin-bottom: .25rem; }
+      .sw-loading {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted, #64748b);
+        font-size: .82rem;
+        gap: .5rem;
+      }
+      .sw-spin {
+        width: 14px;
+        height: 14px;
+        border: 2px solid var(--border, #e2e8f0);
+        border-top-color: var(--primary, #7FC571);
+        border-radius: 50%;
+        animation: sw-spin .65s linear infinite;
+      }
+      @keyframes sw-spin { to { transform: rotate(360deg); } }
 
       /* Input row */
       #sw-input-row {
@@ -348,12 +367,30 @@
         border-bottom: 1px solid var(--border, #e2e8f0);
         font-size: .73rem; transition: background .15s;
         display: flex; flex-direction: column; gap: 2px;
+        position: relative;
       }
       .sw-prev-item:last-child  { border-bottom: none; }
       .sw-prev-item:hover       { background: var(--primary-light, #edf7eb); }
       .sw-prev-item.sw-sel      { background: var(--primary-light, #edf7eb); }
       .sw-prev-date    { color: var(--text-muted, #64748b); font-size: .67rem; }
       .sw-prev-preview { color: var(--text, #1e293b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sw-prev-del {
+        position: absolute;
+        top: .3rem;
+        right: .35rem;
+        width: 18px;
+        height: 18px;
+        border: none;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--text-muted, #64748b);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: .65rem;
+      }
+      .sw-prev-del:hover { color: var(--danger, #dc2626); background: rgba(220,38,38,.08); }
 
       /* Back bar (inside message area when viewing past conv) */
       .sw-back-bar {
@@ -565,6 +602,8 @@
       fab.setAttribute('aria-expanded', 'true');
       hideToast();
       _state.selectedPrevId = null;
+      _state.loading = true;
+      renderMessages();
       await loadMessages(true);
       focusInput();
     } else {
@@ -583,6 +622,8 @@
   // ── Load messages ─────────────────────────────────────────────────────
   async function loadMessages(markRead = false) {
     try {
+      _state.loading = true;
+      if (_state.open) renderMessages();
       const ep = (markRead && _state.open)
         ? 'support-messages?mark_read=1'
         : 'support-messages';
@@ -616,6 +657,9 @@
       updateResolvedUI();
     } catch (err) {
       console.warn('[support-widget] loadMessages error:', err);
+    } finally {
+      _state.loading = false;
+      if (_state.open) renderMessages();
     }
   }
 
@@ -635,6 +679,11 @@
   function renderMessages() {
     const container = document.getElementById('sw-msgs');
     if (!container) return;
+
+    if (_state.loading) {
+      container.innerHTML = '<div class="sw-loading"><span class="sw-spin" aria-hidden="true"></span><span>Loading…</span></div>';
+      return;
+    }
 
     // Viewing a specific past conversation
     if (_state.selectedPrevId) {
@@ -763,6 +812,9 @@
     list.innerHTML = _state.prevConvs.map(c => `
       <div class="sw-prev-item${_state.selectedPrevId === c.id ? ' sw-sel' : ''}"
            role="listitem" data-id="${esc(c.id)}">
+        <button class="sw-prev-del" data-del-id="${esc(c.id)}" title="Delete conversation" aria-label="Delete conversation">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
         <span class="sw-prev-date">${esc(fmtDate(c.resolved_at || c.created_at))} · Resolved</span>
         <span class="sw-prev-preview">${esc(c.last_message?.body || 'No messages')}</span>
       </div>`).join('');
@@ -772,6 +824,13 @@
         _state.selectedPrevId = item.dataset.id;
         renderMessages();
         renderPrevList();
+      });
+    });
+
+    list.querySelectorAll('.sw-prev-del').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        deleteConv(btn.dataset.delId);
       });
     });
   }

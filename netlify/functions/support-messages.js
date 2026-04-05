@@ -215,8 +215,6 @@ exports.handler = async (event) => {
         `/support_messages?conversation_id=eq.${encodeURIComponent(conversation.id)}&from_admin=eq.false&select=id`,
         { headers: { Prefer: 'count=exact,return=representation' } }
       ).catch(() => []);
-      const isFirstUserMessage = Array.isArray(countRes) ? countRes.length === 1 : false;
-
       const adminRows = await sbFetch(
         `/profiles?email=eq.${encodeURIComponent(ADMIN_EMAIL)}&select=last_seen_at&limit=1`
       ).catch(() => []);
@@ -225,13 +223,11 @@ exports.handler = async (event) => {
       const lastSeenMs = lastSeenStr ? new Date(lastSeenStr).getTime() : null;
       const isAdminInactive = lastSeenMs === null || (Date.now() - lastSeenMs) > INACTIVE_MS;
 
-      if (isFirstUserMessage || isAdminInactive) {
+      if (isAdminInactive) {
         const siteTitle = getSiteTitle();
         await sendEmail({
           to: ADMIN_EMAIL,
-          subject: isFirstUserMessage
-            ? `New support conversation started on ${siteTitle}`
-            : `New support message on ${siteTitle}`,
+          subject: `New support message on ${siteTitle}`,
           html: `
             <p>Hello,</p>
             <p><strong>${escHtml(user.email)}</strong> sent a support message on <em>${escHtml(siteTitle)}</em>:</p>

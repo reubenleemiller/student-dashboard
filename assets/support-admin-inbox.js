@@ -4,6 +4,7 @@ import { requireAdmin, showToast, confirmModal, setBtnLoading } from '/js/auth.j
 const API = '/api';
 const TYPING_DEBOUNCE_MS = 1200;
 const TYPING_VISIBLE_MS = 8000;
+const TYPING_PING_THROTTLE_MS = 3000;
 const POLL_MS = 5000;
 const PRESENCE_MS = 60000;
 
@@ -18,6 +19,7 @@ const state = {
   typingTimer: null,
   typingActive: false,
   typingConversationId: null,
+  lastTypingPingAt: 0,
   pollTimer: null,
   presenceTimer: null,
   supportSectionActive: false,
@@ -401,12 +403,16 @@ function isTypingRecently(value) {
 }
 
 async function loadConversations(keepSelection = false) {
+  await loadConversationsInternal(keepSelection, true);
+}
+
+async function loadConversationsInternal(keepSelection = false, showLoading = true) {
   const listWrap = document.getElementById('supportConversationList');
   const threadWrap = document.getElementById('supportThreadWrap');
-  if (listWrap) {
+  if (listWrap && showLoading) {
     listWrap.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading…</div>';
   }
-  if (threadWrap && !keepSelection) {
+  if (threadWrap && !keepSelection && showLoading) {
     threadWrap.innerHTML = '<div class="support-thread-empty">Select a conversation to review the thread.</div>';
   }
 
@@ -425,12 +431,7 @@ async function loadConversations(keepSelection = false) {
 }
 
 async function refreshRealtime() {
-  const res = await apiFetch('support-inbox');
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || 'Failed to load support conversations');
-
-  state.conversations = json.conversations || [];
-  renderConversationList();
+  await loadConversationsInternal(true, false);
 
   if (!state.currentConversationId) return;
 
@@ -700,8 +701,7 @@ async function handleReplySubmit(event) {
     renderReplyCount();
     setTyping(false);
     showToast('Reply sent.', 'success');
-    await loadConversationThread(state.currentConversationId, true);
-    await loadConversations(true);
+    await refreshRealtime();
   } catch (error) {
     showToast(error.message, 'error');
   } finally {
@@ -722,8 +722,7 @@ async function updateConversation(action) {
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || 'Action failed');
     showToast(action === 'resolve' ? 'Conversation resolved.' : 'Conversation reopened.', 'success');
-    await loadConversationThread(state.currentConversationId, true);
-    await loadConversations(true);
+    await refreshRealtime();
   } catch (error) {
     showToast(error.message, 'error');
   }
@@ -759,9 +758,30 @@ async function deleteConversation() {
 
 function handleTypingInput() {
   renderReplyCount();
-  setTyping(true);
+  pingTypingTrue();
   clearTimeout(state.typingTimer);
   state.typingTimer = setTimeout(() => setTyping(false), TYPING_DEBOUNCE_MS);
+}
+
+function pingTypingTrue() {
+  const conversationId = state.currentConversationId;
+  if (!conversationId) return;
+  const now = Date.now();
+  if (state.typingActive && state.typingConversationId === conversationId && (now - state.lastTypingPingAt) < TYPING_PING_THROTTLE_MS) {
+    return;
+  }
+  state.lastTypingPingAt = now;
+  state.typingActive = true;
+  state.typingConversationId = conversationId;
+  apiFetch('support-typing', {
+    method: 'POST',
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      typing: true,
+    }),
+  }).catch(() => {
+    // typing indicators are best-effort
+  });
 }
 
 async function setTyping(typing) {
@@ -778,6 +798,7 @@ async function setTypingForConversation(conversationId, typing) {
     if (!state.typingActive || state.typingConversationId !== conversationId) return;
     state.typingActive = false;
     state.typingConversationId = null;
+    state.lastTypingPingAt = 0;
   }
 
   try {
