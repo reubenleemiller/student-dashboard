@@ -102,6 +102,8 @@
     s.id = 'sw-styles';
     s.textContent = `
       /* ── Support Widget ────────────────────────────────────────── */
+      .sw-gone { display: none !important; }
+
       #sw-fab {
         position: fixed; bottom: 24px; right: 24px;
         width: 52px; height: 52px; border-radius: 50%;
@@ -187,6 +189,11 @@
       #sw-reopen-btn {
         background: none; border: none; padding: 0; margin-left: .25rem;
         color: var(--primary, #7FC571); cursor: pointer;
+        font-size: .75rem; text-decoration: underline;
+      }
+      #sw-delete-btn {
+        background: none; border: none; padding: 0; margin-left: .25rem;
+        color: var(--danger, #dc2626); cursor: pointer;
         font-size: .75rem; text-decoration: underline;
       }
 
@@ -395,6 +402,7 @@
         <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
         Conversation resolved
         <button id="sw-reopen-btn">Reopen</button>
+        <button id="sw-delete-btn">Delete</button>
       </div>
 
       <div id="sw-msgs" role="log" aria-live="polite" aria-label="Chat messages"></div>
@@ -439,7 +447,7 @@
 
   // ── Events ────────────────────────────────────────────────────────────
   function attachEvents() {
-    document.getElementById('sw-fab').addEventListener('click', () => openPanel(true));
+    document.getElementById('sw-fab').addEventListener('click', () => openPanel(!_state.open));
     document.getElementById('sw-close-btn').addEventListener('click', () => openPanel(false));
 
     const input = document.getElementById('sw-input');
@@ -451,6 +459,10 @@
     document.getElementById('sw-send').addEventListener('click', sendMsg);
     document.getElementById('sw-resolve-btn').addEventListener('click', resolveConv);
     document.getElementById('sw-reopen-btn').addEventListener('click', reopenConv);
+    document.getElementById('sw-delete-btn').addEventListener('click', () => {
+      const id = _state.conversation?.id;
+      if (id) deleteConv(id);
+    });
     document.getElementById('sw-prev-toggle').addEventListener('click', togglePrev);
     document.getElementById('sw-toast').addEventListener('click', () => {
       hideToast();
@@ -638,6 +650,12 @@
   function drawPastMsgs(container, convId, messages) {
     const conv     = _state.prevConvs.find(c => c.id === convId);
     const dateStr  = conv ? fmtDate(conv.resolved_at || conv.created_at) : '';
+    const actions  = conv && conv.resolved
+      ? `<span style="margin-left:auto;display:inline-flex;gap:.5rem;">
+           <button class="sw-back-btn" id="sw-prev-reopen-btn">Reopen</button>
+           <button class="sw-back-btn" id="sw-prev-delete-btn" style="color:var(--danger,#dc2626)">Delete</button>
+         </span>`
+      : '';
     const msgsHtml = messages.length
       ? messages.map(msgHtml).join('')
       : '<div class="sw-empty"><span>No messages in this conversation.</span></div>';
@@ -648,12 +666,15 @@
           <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Back
         </button>
         <span>Resolved ${esc(dateStr)}</span>
+        ${actions}
       </div>
       <div style="flex:1;overflow-y:auto;padding:.75rem;display:flex;flex-direction:column;gap:.5rem;">
         ${msgsHtml}
       </div>`;
 
     document.getElementById('sw-back-btn')?.addEventListener('click', backToActive);
+    document.getElementById('sw-prev-reopen-btn')?.addEventListener('click', () => reopenSpecificConv(convId));
+    document.getElementById('sw-prev-delete-btn')?.addEventListener('click', () => deleteConv(convId));
   }
 
   function backToActive() {
@@ -706,14 +727,38 @@
   async function reopenConv() {
     const id = _state.conversation?.id;
     if (!id) return;
+    await reopenSpecificConv(id);
+  }
+
+  async function reopenSpecificConv(id) {
+    if (!id) return;
     try {
       await apiFetch('support-conversations', {
         method: 'POST',
         body: JSON.stringify({ action: 'reopen_own', conversation_id: id }),
       });
+      _state.selectedPrevId = null;
       await loadMessages(false);
     } catch (err) {
       console.warn('[support-widget] reopenConv error:', err);
+    }
+  }
+
+  async function deleteConv(id) {
+    if (!id) return;
+    if (!window.confirm('Delete this conversation and all messages? This cannot be undone.')) {
+      return;
+    }
+    try {
+      await apiFetch('support-conversations', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'delete_own', conversation_id: id }),
+      });
+      _state.selectedPrevId = null;
+      delete _state.prevMsgCache[id];
+      await loadMessages(false);
+    } catch (err) {
+      console.warn('[support-widget] deleteConv error:', err);
     }
   }
 
@@ -767,12 +812,13 @@
     const inputRow = document.getElementById('sw-input-row');
     const resBtn   = document.getElementById('sw-resolve-btn');
 
+    const viewingPast = !!_state.selectedPrevId;
     const resolved = _state.conversation?.resolved === true;
     const hasConv  = !!_state.conversation;
 
-    toggleGone(banner,   !resolved);
-    toggleGone(inputRow,  resolved);
-    toggleGone(resBtn,   !(hasConv && !resolved));
+    toggleGone(banner,   !(resolved && !viewingPast));
+    toggleGone(inputRow,  resolved || viewingPast);
+    toggleGone(resBtn,   !(hasConv && !resolved && !viewingPast));
   }
 
   function togglePrev() {

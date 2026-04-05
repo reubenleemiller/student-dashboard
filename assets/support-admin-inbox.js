@@ -4,6 +4,7 @@ import { requireAdmin, showToast, confirmModal, setBtnLoading } from '/js/auth.j
 const API = '/api';
 const TYPING_DEBOUNCE_MS = 1200;
 const TYPING_VISIBLE_MS = 8000;
+const POLL_MS = 5000;
 
 const state = {
   supabase: null,
@@ -15,6 +16,9 @@ const state = {
   currentAdminName: 'Admin',
   typingTimer: null,
   typingActive: false,
+  typingConversationId: null,
+  pollTimer: null,
+  supportSectionActive: false,
 };
 
 if (document.readyState === 'loading') {
@@ -37,39 +41,49 @@ async function init() {
   const refreshBtn = document.getElementById('supportInboxRefreshBtn');
   refreshBtn?.addEventListener('click', () => loadConversations(true));
 
-  const replyForm = document.getElementById('supportReplyForm');
-  replyForm?.addEventListener('submit', handleReplySubmit);
-
-  const replyInput = document.getElementById('supportReplyInput');
-  replyInput?.addEventListener('input', handleTypingInput);
-  replyInput?.addEventListener('blur', () => setTyping(false));
-  replyInput?.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      replyInput.value = '';
-      setTyping(false);
-      renderReplyCount();
-      return;
-    }
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      replyForm?.requestSubmit();
-    }
-  });
-
   if (document.getElementById('section-support')?.classList.contains('active')) {
+    state.supportSectionActive = true;
     await loadConversations(false);
+    startPolling();
   }
 }
 
 function wireGlobals() {
   window.__adminSupportInboxOnSectionChange = async (section) => {
+    state.supportSectionActive = section === 'support';
     if (section === 'support') {
       await loadConversations(false);
+      startPolling();
+    } else {
+      stopPolling();
+      clearTimeout(state.typingTimer);
+      if (state.typingActive && state.typingConversationId) {
+        setTypingForConversation(state.typingConversationId, false);
+      }
     }
   };
   window.__adminSupportInboxRefresh = async () => {
     await loadConversations(true);
   };
+}
+
+function startPolling() {
+  stopPolling();
+  state.pollTimer = setInterval(async () => {
+    if (!state.supportSectionActive || document.hidden) return;
+    try {
+      await loadConversations(true);
+    } catch {
+      // best effort refresh
+    }
+  }, POLL_MS);
+}
+
+function stopPolling() {
+  if (state.pollTimer) {
+    clearInterval(state.pollTimer);
+    state.pollTimer = null;
+  }
 }
 
 function injectStyles() {
@@ -80,8 +94,9 @@ function injectStyles() {
     .support-layout {
       display: grid;
       grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-      gap: 1rem;
+      gap: 1.25rem;
       align-items: start;
+      margin-top: .5rem;
     }
     .support-pane {
       min-height: 580px;
@@ -422,7 +437,8 @@ async function loadConversationThread(conversationId, forceRefresh = false) {
   if (!conversationId) return;
   const previousConversationId = state.currentConversationId;
   if (state.typingActive && previousConversationId && previousConversationId !== conversationId) {
-    await setTyping(false, previousConversationId);
+    clearTimeout(state.typingTimer);
+    await setTypingForConversation(previousConversationId, false);
   }
   state.currentConversationId = conversationId;
 
@@ -527,17 +543,37 @@ function renderThread() {
   document.getElementById('supportResolveBtn')?.addEventListener('click', () => updateConversation('resolve'));
   document.getElementById('supportUnresolveBtn')?.addEventListener('click', () => updateConversation('unresolve'));
   document.getElementById('supportDeleteBtn')?.addEventListener('click', () => deleteConversation());
+  const replyForm = document.getElementById('supportReplyForm');
+  const replyInput = document.getElementById('supportReplyInput');
+
+  replyForm?.addEventListener('submit', handleReplySubmit);
+  replyInput?.addEventListener('input', handleTypingInput);
+  replyInput?.addEventListener('blur', () => setTyping(false));
+  replyInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      replyInput.value = '';
+      setTyping(false);
+      renderReplyCount();
+      return;
+    }
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      replyForm?.requestSubmit();
+    }
+  });
+
   document.getElementById('supportClearReplyBtn')?.addEventListener('click', () => {
-    const input = document.getElementById('supportReplyInput');
-    if (input) {
-      input.value = '';
+    if (replyInput) {
+      replyInput.value = '';
       renderReplyCount();
       setTyping(false);
-      input.focus();
+      replyInput.focus();
     }
   });
 
   renderReplyCount();
+  const msgWrap = document.getElementById('supportThreadMessages');
+  if (msgWrap) msgWrap.scrollTop = msgWrap.scrollHeight;
 }
 
 function renderReplyCount() {
@@ -641,8 +677,17 @@ async function setTyping(typing) {
 }
 
 async function setTypingForConversation(conversationId, typing) {
-  if (!conversationId || state.typingActive === typing) return;
-  state.typingActive = typing;
+  if (!conversationId) return;
+  if (typing) {
+    if (state.typingActive && state.typingConversationId === conversationId) return;
+    state.typingActive = true;
+    state.typingConversationId = conversationId;
+  } else {
+    if (!state.typingActive || state.typingConversationId !== conversationId) return;
+    state.typingActive = false;
+    state.typingConversationId = null;
+  }
+
   try {
     await apiFetch('support-typing', {
       method: 'POST',

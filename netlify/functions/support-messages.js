@@ -15,8 +15,12 @@
 
 const SUPABASE_URL          = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const ADMIN_EMAIL           = process.env.ADMIN_EMAIL || 'reuben.miller@rmtutoringservices.com';
+const SITE_URL              = (process.env.SITE_URL || '').replace(/\/$/, '');
+const INACTIVE_MS           = 5 * 60 * 1000;
 
 const { authenticate } = require('./_auth.js');
+const { sendEmail, escHtml, getSiteTitle } = require('./_email.js');
 
 /** Call the Supabase REST API with service-role auth. */
 async function sbFetch(path, opts = {}) {
@@ -205,6 +209,42 @@ exports.handler = async (event) => {
       }),
     });
     const savedMsg = Array.isArray(newMsgResult) ? newMsgResult[0] : newMsgResult;
+
+    try {
+      const countRes = await sbFetch(
+        `/support_messages?conversation_id=eq.${encodeURIComponent(conversation.id)}&from_admin=eq.false&select=id`,
+        { headers: { Prefer: 'count=exact,return=representation' } }
+      ).catch(() => []);
+      const isFirstUserMessage = Array.isArray(countRes) ? countRes.length === 1 : false;
+
+      const adminRows = await sbFetch(
+        `/profiles?email=eq.${encodeURIComponent(ADMIN_EMAIL)}&select=last_seen_at&limit=1`
+      ).catch(() => []);
+      const adminRow = Array.isArray(adminRows) && adminRows.length ? adminRows[0] : null;
+      const lastSeenStr = adminRow?.last_seen_at || null;
+      const lastSeenMs = lastSeenStr ? new Date(lastSeenStr).getTime() : null;
+      const isAdminInactive = lastSeenMs === null || (Date.now() - lastSeenMs) > INACTIVE_MS;
+
+      if (isFirstUserMessage || isAdminInactive) {
+        const siteTitle = getSiteTitle();
+        await sendEmail({
+          to: ADMIN_EMAIL,
+          subject: isFirstUserMessage
+            ? `New support conversation started on ${siteTitle}`
+            : `New support message on ${siteTitle}`,
+          html: `
+            <p>Hello,</p>
+            <p><strong>${escHtml(user.email)}</strong> sent a support message on <em>${escHtml(siteTitle)}</em>:</p>
+            <blockquote style="border-left:3px solid #7FC571;padding:8px 16px;margin:16px 0;color:#333;">
+              ${escHtml(message.trim())}
+            </blockquote>
+            ${SITE_URL ? `<p style="margin:24px 0;"><a href="${SITE_URL}/admin.html" style="background:#7FC571;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;">Open Admin Inbox</a></p>` : ''}
+          `,
+        });
+      }
+    } catch (emailErr) {
+      console.error('support-messages admin notification failed', emailErr);
+    }
 
     return {
       statusCode: 200,

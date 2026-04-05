@@ -3,8 +3,11 @@
 const SUPABASE_URL          = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ADMIN_EMAIL           = process.env.ADMIN_EMAIL || 'reuben.miller@rmtutoringservices.com';
+const SITE_URL              = (process.env.SITE_URL || '').replace(/\/$/, '');
+const INACTIVE_MS           = 5 * 60 * 1000;
 
 const { authenticate } = require('./_auth.js');
+const { sendEmail, escHtml, getSiteTitle } = require('./_email.js');
 
 async function sbFetch(path, opts = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
@@ -47,6 +50,12 @@ async function getAdminName(userId) {
   ).catch(() => []);
   const profile = Array.isArray(rows) && rows.length ? rows[0] : null;
   return profile?.full_name || 'Admin';
+}
+
+async function getMessagesForTranscript(conversationId) {
+  return sbFetch(
+    `/support_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&select=body,from_admin,created_at&order=created_at.asc`
+  ).catch(() => []);
 }
 
 async function getConversationById(conversationId) {
@@ -189,9 +198,11 @@ exports.handler = async (event) => {
             user_email: conversation.user_email,
             body: message.trim(),
             from_admin: true,
-            read_at: new Date().toISOString(),
+            read_at: null,
           }),
         });
+
+        const saved = Array.isArray(rows) && rows.length ? rows[0] : rows;
 
         await sbFetch(
           `/support_conversations?id=eq.${encodeURIComponent(conversation_id)}`,
@@ -205,20 +216,96 @@ exports.handler = async (event) => {
           }
         ).catch(() => {});
 
+        try {
+          const userRows = await sbFetch(
+            `/profiles?id=eq.${encodeURIComponent(conversation.user_id)}&select=full_name,last_seen_at&limit=1`
+          ).catch(() => []);
+          const userProfile = Array.isArray(userRows) && userRows.length ? userRows[0] : null;
+          const userName = userProfile?.full_name || conversation.user_email;
+          const lastSeenStr = userProfile?.last_seen_at || null;
+          const lastSeenMs = lastSeenStr ? new Date(lastSeenStr).getTime() : null;
+          const inactive = lastSeenMs === null || (Date.now() - lastSeenMs) > INACTIVE_MS;
+
+          if (inactive) {
+            const siteTitle = getSiteTitle();
+            await sendEmail({
+              to: conversation.user_email,
+              subject: `You have a new reply on ${siteTitle}`,
+              html: `
+                <p>Hello ${escHtml(userName)},</p>
+                <p>The tutor replied to your support message on <em>${escHtml(siteTitle)}</em>:</p>
+                <blockquote style="border-left:3px solid #7FC571;padding:8px 16px;margin:16px 0;color:#333;">
+                  ${escHtml(message.trim())}
+                </blockquote>
+                ${SITE_URL ? `<p style="margin:24px 0;"><a href="${SITE_URL}/dashboard.html" style="background:#7FC571;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;">View Your Messages</a></p>` : ''}
+              `,
+            });
+            if (saved?.id) {
+              await sbFetch(`/support_messages?id=eq.${saved.id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ notified_at: new Date().toISOString() }),
+              }).catch(() => {});
+            }
+          }
+        } catch (emailErr) {
+          console.error('support-inbox reply email failed', emailErr);
+        }
+
         return json(200, {
           ok: true,
-          message: Array.isArray(rows) && rows.length ? rows[0] : rows,
+          message: saved,
         });
       }
 
       if (action === 'resolve') {
+        const nowIso = new Date().toISOString();
         await sbFetch(
           `/support_conversations?id=eq.${encodeURIComponent(conversation_id)}`,
           {
             method: 'PATCH',
-            body: JSON.stringify({ resolved: true, resolved_at: new Date().toISOString(), admin_typing_at: null }),
+            body: JSON.stringify({ resolved: true, resolved_at: nowIso, admin_typing_at: null }),
           }
         );
+
+        try {
+          const userRows = await sbFetch(
+            `/profiles?id=eq.${encodeURIComponent(conversation.user_id)}&select=full_name&limit=1`
+          ).catch(() => []);
+          const userProfile = Array.isArray(userRows) && userRows.length ? userRows[0] : null;
+          const userName = userProfile?.full_name || conversation.user_email;
+          const siteTitle = getSiteTitle();
+          const messages = await getMessagesForTranscript(conversation_id);
+          const rows = (messages || []).map((msg) => {
+            const sender = msg.from_admin ? 'Support Team' : escHtml(userName);
+            const time = new Date(msg.created_at).toLocaleString();
+            return '<tr>' +
+              `<td style="padding:6px 12px;white-space:nowrap;color:#555;font-size:0.88em;">${sender}</td>` +
+              `<td style="padding:6px 12px;white-space:nowrap;color:#999;font-size:0.82em;">${escHtml(time)}</td>` +
+              `<td style="padding:6px 12px;word-break:break-word;">${escHtml(msg.body)}</td>` +
+              '</tr>';
+          }).join('');
+
+          await sendEmail({
+            to: conversation.user_email,
+            subject: `Your support conversation has been resolved - ${siteTitle}`,
+            html: `
+              <p>Hello ${escHtml(userName)},</p>
+              <p>Your support conversation on <em>${escHtml(siteTitle)}</em> has been marked as resolved. Here is a transcript:</p>
+              <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:0.95em;">
+                <thead><tr style="background:#f5f5f5;">
+                  <th style="padding:6px 12px;text-align:left;border-bottom:2px solid #7FC571;">From</th>
+                  <th style="padding:6px 12px;text-align:left;border-bottom:2px solid #7FC571;">Time</th>
+                  <th style="padding:6px 12px;text-align:left;border-bottom:2px solid #7FC571;">Message</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+              ${SITE_URL ? `<p style="margin:24px 0;"><a href="${SITE_URL}/dashboard.html" style="background:#7FC571;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;">Open Dashboard</a></p>` : ''}
+            `,
+          });
+        } catch (emailErr) {
+          console.error('support-inbox resolve transcript email failed', emailErr);
+        }
+
         return json(200, { ok: true });
       }
 
