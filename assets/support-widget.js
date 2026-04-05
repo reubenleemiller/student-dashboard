@@ -28,9 +28,7 @@
     selectedPrevId: null,     // Viewing a specific past conversation
     prevMsgCache:   {},       // Cache of messages keyed by conversation_id
     adminName:      'Support',
-    adminPhoto:     null,
     userName:       null,
-    userPhoto:      null,
     adminTypingAt:  null,
     unread:         0,
     isTyping:       false,
@@ -436,9 +434,7 @@
   function setAdminAvatar() {
     const av = document.getElementById('sw-hav');
     if (!av) return;
-    av.innerHTML = _state.adminPhoto
-      ? `<img src="${esc(_state.adminPhoto)}" alt="${esc(_state.adminName)}" />`
-      : initials(_state.adminName);
+    av.textContent = initials(_state.adminName);
   }
 
   // ── Events ────────────────────────────────────────────────────────────
@@ -528,9 +524,7 @@
       _state.messages       = data.messages || [];
       _state.prevConvs      = data.previous_conversations || [];
       _state.adminName      = data.admin_name   || 'Support';
-      _state.adminPhoto     = data.admin_photo  || null;
       _state.userName       = data.user_name    || null;
-      _state.userPhoto      = data.user_photo   || null;
       _state.adminTypingAt  = data.admin_typing_at || null;
       _state.unread         = data.unread_count || 0;
 
@@ -593,11 +587,8 @@
   function msgHtml(m) {
     const isUser = !m.from_admin;
     const cls    = isUser ? 'sw-msg sw-msg-u' : 'sw-msg sw-msg-a';
-    const photo  = isUser ? _state.userPhoto : _state.adminPhoto;
     const name   = isUser ? (_state.userName || 'You') : _state.adminName;
-    const av     = photo
-      ? `<img src="${esc(photo)}" alt="${esc(name)}" />`
-      : initials(name);
+    const av     = initials(name);
     const time   = fmtTime(m.created_at);
 
     let receipt = '';
