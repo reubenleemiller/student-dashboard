@@ -10,12 +10,13 @@
   'use strict';
 
   // ── Constants ────────────────────────────────────────────────────────
-  const API      = '/.netlify/functions';
-  const POLL_MS  = 5000;   // Message polling interval (ms)
-  const TYPING_S = 3000;   // Typing-stop debounce (ms)
-  const TOAST_MS = 6000;   // Toast auto-hide duration (ms)
+  const API            = '/.netlify/functions';
+  const POLL_MS        = 5000;   // Message polling interval (ms)
+  const TYPING_S       = 3000;   // Typing-stop debounce (ms)
+  const TOAST_MS       = 6000;   // Toast auto-hide duration (ms)
   const ADMIN_TYPING_TTL = 8000; // How long to show "admin typing" (ms)
-  const PRESENCE_MS = 60000;
+  const PRESENCE_MS    = 60000;
+  const MIN_SPINNER_MS = 2000;   // Minimum ms to show loading overlay
 
   // ── Mutable state ────────────────────────────────────────────────────
   let _sb           = null;   // Supabase client
@@ -40,6 +41,8 @@
     pollTimer:      null,
     presenceTimer:  null,
     toastTimer:     null,
+    panelOpenTime:  0,        // Timestamp when panel was last opened
+    overlayReady:   false,    // True once the initial load after open is done
   };
 
   // ── Initialisation ───────────────────────────────────────────────────
@@ -128,10 +131,11 @@
         position: absolute; top: -4px; right: -4px;
         background: var(--danger, #dc2626); color: #fff;
         font-size: .6rem; font-weight: 700;
-        min-width: 18px; height: 18px; border-radius: 9999px;
+        min-width: 20px; height: 20px; border-radius: 10px;
         display: flex; align-items: center; justify-content: center;
         padding: 0 4px; pointer-events: none; line-height: 1;
         border: 2px solid var(--surface, #fff);
+        box-shadow: 0 0 0 2px #fff;
       }
       #sw-badge.sw-gone { display: none; }
 
@@ -145,12 +149,14 @@
         box-shadow: 0 12px 40px rgba(0,0,0,.15);
         z-index: 8999; display: flex; flex-direction: column;
         overflow: hidden;
-        transition: opacity .2s, transform .2s;
+        opacity: 0; transform: translateY(20px) scale(0.96);
+        pointer-events: none;
+        transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
         transform-origin: bottom right;
       }
-      #sw-panel.sw-gone {
-        opacity: 0; transform: scale(.92) translateY(8px);
-        pointer-events: none;
+      #sw-panel.sw-open {
+        opacity: 1; transform: translateY(0) scale(1);
+        pointer-events: auto;
       }
 
       /* Header */
@@ -317,6 +323,29 @@
         animation: sw-spin .65s linear infinite;
       }
       @keyframes sw-spin { to { transform: rotate(360deg); } }
+
+      /* Full-panel loading overlay (shown on first open, min 2 s) */
+      #sw-overlay {
+        position: absolute; inset: 0; z-index: 10;
+        background: rgba(255,255,255,0.88);
+        backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: .75rem;
+        border-radius: 12px;
+        opacity: 0; pointer-events: none;
+        transition: opacity 0.2s ease;
+      }
+      #sw-overlay.sw-overlay-visible { opacity: 1; pointer-events: auto; }
+      .sw-overlay-spinner {
+        width: 2rem; height: 2rem;
+        border: 3px solid rgba(127,197,113,0.2);
+        border-top-color: var(--primary, #7FC571);
+        border-radius: 50%; animation: sw-spin 0.8s linear infinite;
+      }
+      .sw-overlay-text {
+        font-size: .875rem; color: var(--text-muted, #64748b);
+        font-family: inherit;
+      }
 
       /* Input row */
       #sw-input-row {
@@ -504,41 +533,42 @@
       /* Toast */
       #sw-toast {
         position: fixed; bottom: 90px; right: 24px;
-        background: var(--text, #1e293b); color: #fff;
-        padding: 0; border-radius: 10px;
-        font-size: .78rem; max-width: 280px; line-height: 1.4;
-        z-index: 9001;
-        box-shadow: 0 4px 14px rgba(0,0,0,.2);
-        transition: opacity .3s, transform .3s;
-        overflow: hidden;
-      }
-      #sw-toast.sw-gone { opacity: 0; transform: translateY(6px); pointer-events: none; }
-      .sw-toast-inner {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: .25rem;
-        align-items: start;
-        padding: .6rem .7rem .5rem .8rem;
+        background: #fff; color: var(--text, #1e293b);
+        border: 1px solid rgba(0,0,0,0.09);
+        border-radius: 14px;
+        box-shadow: 0 6px 28px rgba(0,0,0,.15), 0 2px 8px rgba(0,0,0,.08);
+        max-width: 290px; width: calc(100vw - 3rem);
+        z-index: 9001; overflow: hidden;
+        display: flex; align-items: flex-start; gap: .6rem;
+        padding: .7rem .85rem;
         cursor: pointer;
+        opacity: 0; transform: translateY(16px) scale(0.97); pointer-events: none;
+        transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
       }
-      .sw-toast-text { overflow: hidden; text-overflow: ellipsis; }
+      #sw-toast.sw-toast-visible {
+        opacity: 1; transform: translateY(0) scale(1); pointer-events: auto;
+      }
+      .sw-toast-avatar { flex-shrink: 0; }
+      .sw-toast-body { flex: 1; min-width: 0; }
+      .sw-toast-sender {
+        font-size: .74rem; font-weight: 700; color: #333;
+        margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .sw-toast-preview {
+        font-size: .82rem; color: #555;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
       .sw-toast-close {
-        border: none; background: transparent; color: rgba(255,255,255,.85);
-        cursor: pointer; font-size: .8rem; line-height: 1; padding: .2rem;
+        flex-shrink: 0; align-self: flex-start;
+        border: none; background: transparent; color: #bbb;
+        cursor: pointer; font-size: .8rem; padding: 0; line-height: 1;
+        transition: color 0.15s;
       }
-      .sw-toast-close:hover { color: #fff; }
-      .sw-toast-progress {
-        height: 3px;
-        width: 100%;
-        background: rgba(255,255,255,.35);
-        transform-origin: left center;
-        animation-name: sw-toast-progress;
-        animation-timing-function: linear;
-        animation-fill-mode: forwards;
-      }
-      @keyframes sw-toast-progress {
-        from { transform: scaleX(1); }
-        to   { transform: scaleX(0); }
+      .sw-toast-close:hover { color: #555; }
+      .sw-toast-bar {
+        position: absolute; bottom: 0; left: 0; height: 3px;
+        background: var(--primary, #7FC571); border-radius: 0 0 14px 14px;
+        width: 100%; transform-origin: left; transition: transform linear;
       }
 
       @media (max-width: 420px) {
@@ -558,9 +588,14 @@
     const badge = el('span', { id: 'sw-badge', class: 'sw-gone' });
     fab.appendChild(badge);
 
-    // Panel
-    const panel = el('div', { id: 'sw-panel', class: 'sw-gone', role: 'dialog', 'aria-label': 'Support chat' });
+    // Panel — use opacity/pointer-events (not display:none) so spring animation works
+    const panel = el('div', { id: 'sw-panel', role: 'dialog', 'aria-label': 'Support chat' });
     panel.innerHTML = `
+      <div id="sw-overlay" aria-live="polite" aria-label="Loading chat">
+        <div class="sw-overlay-spinner" aria-hidden="true"></div>
+        <span class="sw-overlay-text">Connecting…</span>
+      </div>
+
       <div id="sw-header">
         <div class="sw-hav" id="sw-hav"></div>
         <div class="sw-hinfo">
@@ -587,7 +622,7 @@
 
       <div id="sw-res-banner" class="sw-gone">
         <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-        Conversation resolved
+        Conversation resolved — type below to start a new one.
         <button id="sw-reopen-btn">Reopen</button>
         <button id="sw-delete-btn">Delete</button>
       </div>
@@ -621,16 +656,19 @@
       </div>
     `;
 
-    // Toast
-    const toast = el('div', { id: 'sw-toast', class: 'sw-gone', role: 'alert', 'aria-live': 'assertive' });
+    // Toast — white card with avatar, sender name, preview, progress bar
+    // Does NOT use sw-gone (display:none) so the CSS opacity/transform transition works
+    const toast = el('div', { id: 'sw-toast', role: 'alert', 'aria-live': 'assertive', 'aria-atomic': 'true' });
     toast.innerHTML = `
-      <div class="sw-toast-inner" id="sw-toast-open">
-        <div class="sw-toast-text" id="sw-toast-text"></div>
-        <button class="sw-toast-close" id="sw-toast-close" aria-label="Dismiss notification">
-          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-        </button>
+      <div class="sw-toast-avatar" id="sw-toast-avatar"></div>
+      <div class="sw-toast-body" id="sw-toast-open">
+        <div class="sw-toast-sender" id="sw-toast-sender"></div>
+        <div class="sw-toast-preview" id="sw-toast-preview"></div>
       </div>
-      <div class="sw-toast-progress" id="sw-toast-progress"></div>
+      <button class="sw-toast-close" id="sw-toast-close" aria-label="Dismiss notification">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+      <div class="sw-toast-bar" id="sw-toast-bar"></div>
     `;
 
     document.body.appendChild(fab);
@@ -678,7 +716,10 @@
     document.getElementById('sw-delete-modal').addEventListener('click', (event) => {
       if (event.target?.dataset?.swDeleteClose === 'true') closeDeleteModal();
     });
-    document.getElementById('sw-toast-open').addEventListener('click', () => {
+    // Clicking the toast body opens chat; close button dismisses
+    document.getElementById('sw-toast').addEventListener('click', (event) => {
+      const closeBtn = document.getElementById('sw-toast-close');
+      if (event.target === closeBtn || closeBtn?.contains(event.target)) return;
       hideToast();
       openPanel(true);
     });
@@ -724,17 +765,44 @@
     const fab   = document.getElementById('sw-fab');
 
     if (open) {
-      panel.classList.remove('sw-gone');
+      // Use rAF so the browser renders the panel at its initial (opacity:0) state
+      // first, allowing the spring transition to play from the start position.
+      requestAnimationFrame(() => panel.classList.add('sw-open'));
       fab.setAttribute('aria-expanded', 'true');
       hideToast();
       _state.selectedPrevId = null;
       _state.loading = true;
+      _state.panelOpenTime = Date.now();
+      _state.overlayReady = false;
+      showLoadingOverlay();
       renderMessages();
       await loadMessages(true, true);
       focusInput();
     } else {
-      panel.classList.add('sw-gone');
+      panel.classList.remove('sw-open');
       fab.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function showLoadingOverlay() {
+    const overlay = document.getElementById('sw-overlay');
+    if (overlay) overlay.classList.add('sw-overlay-visible');
+  }
+
+  function hideLoadingOverlay() {
+    const overlay = document.getElementById('sw-overlay');
+    if (!overlay) return;
+    const elapsed = Date.now() - _state.panelOpenTime;
+    const remaining = MIN_SPINNER_MS - elapsed;
+    const doHide = () => {
+      overlay.classList.remove('sw-overlay-visible');
+      _state.overlayReady = true;
+      if (_state.open) focusInput();
+    };
+    if (remaining > 0) {
+      setTimeout(doHide, remaining);
+    } else {
+      doHide();
     }
   }
 
@@ -773,7 +841,8 @@
       if (!_state.open && _state.unread > prevUnread) {
         const lastAdmin = [..._state.messages].reverse().find(m => m.from_admin);
         if (lastAdmin) {
-          showToast(`${_state.adminName}: ${lastAdmin.body}`);
+          const preview = (lastAdmin.body || '').trim();
+          showToast(_state.adminName, preview.length > 60 ? preview.slice(0, 60) + '…' : preview);
         }
       }
 
@@ -789,6 +858,7 @@
       if (showLoading) {
         _state.loading = false;
         if (_state.open) renderMessages();
+        hideLoadingOverlay();
       }
     }
   }
@@ -1110,7 +1180,7 @@
     const badge = document.getElementById('sw-badge');
     if (!badge) return;
     if (_state.unread > 0 && !_state.open) {
-      badge.textContent = _state.unread > 99 ? '99+' : String(_state.unread);
+      badge.textContent = _state.unread > 9 ? '9+' : String(_state.unread);
       badge.classList.remove('sw-gone');
     } else {
       badge.classList.add('sw-gone');
@@ -1126,8 +1196,11 @@
     const resolved = _state.conversation?.resolved === true;
     const hasConv  = !!_state.conversation;
 
+    // Show resolved banner when current conv is resolved and not viewing a past conv
     toggleGone(banner,   !(resolved && !viewingPast));
-    toggleGone(inputRow,  resolved || viewingPast);
+    // Hide input only when viewing a past conversation; keep visible when resolved
+    // so the user can type to start a new conversation (matches Template behavior)
+    toggleGone(inputRow, viewingPast);
     toggleGone(resBtn,   !(hasConv && !resolved && !viewingPast));
   }
 
@@ -1165,25 +1238,43 @@
   }
 
   // ── Toast ─────────────────────────────────────────────────────────────
-  function showToast(text) {
-    const toast = document.getElementById('sw-toast');
-    const toastText = document.getElementById('sw-toast-text');
-    const progress = document.getElementById('sw-toast-progress');
+  function showToast(senderName, msgPreview) {
+    const toast    = document.getElementById('sw-toast');
+    const senderEl = document.getElementById('sw-toast-sender');
+    const previewEl= document.getElementById('sw-toast-preview');
+    const avatarEl = document.getElementById('sw-toast-avatar');
+    const barEl    = document.getElementById('sw-toast-bar');
     if (!toast) return;
-    if (toastText) toastText.textContent = text;
-    if (progress) {
-      progress.style.animation = 'none';
-      // Force reflow so the animation reliably restarts.
-      void progress.offsetHeight;
-      progress.style.animation = `sw-toast-progress ${TOAST_MS}ms linear forwards`;
+
+    // Populate content
+    if (senderEl)  senderEl.textContent  = senderName || 'Support';
+    if (previewEl) previewEl.textContent = msgPreview  || '';
+    if (avatarEl) {
+      avatarEl.style.cssText = 'width:32px;height:32px;border-radius:50%;background:var(--primary-light,#edf7eb);color:var(--primary,#7FC571);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;flex-shrink:0;';
+      avatarEl.textContent = initials(senderName || 'Support');
     }
-    toast.classList.remove('sw-gone');
+
+    // Reset progress bar and animate
     clearTimeout(_state.toastTimer);
+    if (barEl) {
+      barEl.style.transition = 'none';
+      barEl.style.transform  = 'scaleX(1)';
+      // Double rAF so the browser registers the reset before animating
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        barEl.style.transition = `transform ${TOAST_MS}ms linear`;
+        barEl.style.transform  = 'scaleX(0)';
+      }));
+    }
+
+    // Show via class (spring animation)
+    toast.classList.add('sw-toast-visible');
     _state.toastTimer = setTimeout(hideToast, TOAST_MS);
   }
 
   function hideToast() {
-    document.getElementById('sw-toast')?.classList.add('sw-gone');
+    clearTimeout(_state.toastTimer);
+    const toast = document.getElementById('sw-toast');
+    if (toast) toast.classList.remove('sw-toast-visible');
   }
 
   // ── Utils ─────────────────────────────────────────────────────────────
