@@ -29,6 +29,7 @@
     selectedPrevId: null,     // Viewing a specific past conversation
     prevMsgCache:   {},       // Cache of messages keyed by conversation_id
     pendingDeleteId: null,
+    deleteTriggerEl: null,
     adminName:      'Support',
     userName:       null,
     adminTypingAt:  null,
@@ -666,9 +667,9 @@
     document.getElementById('sw-send').addEventListener('click', sendMsg);
     document.getElementById('sw-resolve-btn').addEventListener('click', resolveConv);
     document.getElementById('sw-reopen-btn').addEventListener('click', reopenConv);
-    document.getElementById('sw-delete-btn').addEventListener('click', () => {
+    document.getElementById('sw-delete-btn').addEventListener('click', (event) => {
       const id = _state.conversation?.id;
-      if (id) openDeleteModal(id);
+      if (id) openDeleteModal(id, event.currentTarget);
     });
     document.getElementById('sw-prev-toggle').addEventListener('click', togglePrev);
     document.getElementById('sw-delete-modal-close').addEventListener('click', closeDeleteModal);
@@ -919,7 +920,7 @@
 
     document.getElementById('sw-back-btn')?.addEventListener('click', backToActive);
     document.getElementById('sw-prev-reopen-btn')?.addEventListener('click', () => reopenSpecificConv(convId));
-    document.getElementById('sw-prev-delete-btn')?.addEventListener('click', () => openDeleteModal(convId));
+    document.getElementById('sw-prev-delete-btn')?.addEventListener('click', (event) => openDeleteModal(convId, event.currentTarget));
   }
 
   function backToActive() {
@@ -959,7 +960,7 @@
     list.querySelectorAll('.sw-prev-del').forEach((btn) => {
       btn.addEventListener('click', (event) => {
         event.stopPropagation();
-        openDeleteModal(btn.dataset.delId);
+        openDeleteModal(btn.dataset.delId, btn);
       });
     });
   }
@@ -1021,9 +1022,10 @@
     }
   }
 
-  function openDeleteModal(id) {
+  function openDeleteModal(id, triggerEl = null) {
     if (!id) return;
     _state.pendingDeleteId = id;
+    _state.deleteTriggerEl = triggerEl;
     toggleGone(document.getElementById('sw-delete-modal'), false);
   }
 
@@ -1034,23 +1036,38 @@
       btn.textContent = 'Delete conversation';
     }
     _state.pendingDeleteId = null;
+    _state.deleteTriggerEl = null;
     toggleGone(document.getElementById('sw-delete-modal'), true);
   }
 
   async function confirmDeleteConv() {
     const id = _state.pendingDeleteId;
+    const trigger = _state.deleteTriggerEl;
     const btn = document.getElementById('sw-delete-modal-confirm');
     if (!id) return closeDeleteModal();
+    let triggerMarkup = null;
+    if (trigger) {
+      triggerMarkup = trigger.innerHTML;
+      trigger.disabled = true;
+      trigger.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
+    }
     if (btn) {
       btn.disabled = true;
       btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Deleting';
     }
-    await deleteConv(id);
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = 'Delete conversation';
+    try {
+      await deleteConv(id);
+    } finally {
+      if (trigger) {
+        trigger.disabled = false;
+        trigger.innerHTML = triggerMarkup || 'Delete';
+      }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Delete conversation';
+      }
+      closeDeleteModal();
     }
-    closeDeleteModal();
   }
 
   // ── Send message ──────────────────────────────────────────────────────

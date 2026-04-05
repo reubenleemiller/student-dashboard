@@ -141,7 +141,7 @@ function injectStyles() {
       display: flex;
       flex-direction: column;
       min-height: 620px;
-      padding: .35rem .3rem .5rem;
+      padding: .35rem .8rem .5rem;
     }
     .support-conv {
       border: 1px solid var(--border);
@@ -208,6 +208,7 @@ function injectStyles() {
       border-bottom: 1px solid var(--border);
       padding-bottom: 1rem;
       margin-bottom: 1rem;
+      padding-inline: .2rem;
     }
     .support-thread-head-top {
       display: flex;
@@ -674,9 +675,9 @@ function renderThread() {
       </div>
     </div>`;
 
-  document.getElementById('supportResolveBtn')?.addEventListener('click', () => updateConversation('resolve'));
-  document.getElementById('supportUnresolveBtn')?.addEventListener('click', () => updateConversation('unresolve'));
-  document.getElementById('supportDeleteBtn')?.addEventListener('click', () => deleteConversation());
+  document.getElementById('supportResolveBtn')?.addEventListener('click', (event) => updateConversation('resolve', event.currentTarget));
+  document.getElementById('supportUnresolveBtn')?.addEventListener('click', (event) => updateConversation('unresolve', event.currentTarget));
+  document.getElementById('supportDeleteBtn')?.addEventListener('click', (event) => deleteConversation(event.currentTarget));
   const replyForm = document.getElementById('supportReplyForm');
   const replyInput = document.getElementById('supportReplyInput');
 
@@ -764,8 +765,10 @@ async function handleReplySubmit(event) {
   }
 }
 
-async function updateConversation(action) {
+async function updateConversation(action, actionBtn = null) {
   if (!state.currentConversationId) return;
+  const loadingLabel = action === 'resolve' ? 'Resolving…' : 'Reopening…';
+  if (actionBtn) setBtnLoading(actionBtn, true, loadingLabel);
   try {
     const res = await apiFetch('support-inbox', {
       method: 'POST',
@@ -780,10 +783,12 @@ async function updateConversation(action) {
     await refreshRealtime();
   } catch (error) {
     showToast(error.message, 'error');
+  } finally {
+    if (actionBtn) setBtnLoading(actionBtn, false);
   }
 }
 
-async function deleteConversation() {
+async function deleteConversation(actionBtn = null) {
   if (!state.currentConversationId) return;
   const confirmed = await confirmModal(
     'Delete this conversation and all of its messages? This cannot be undone.',
@@ -792,6 +797,7 @@ async function deleteConversation() {
   );
   if (!confirmed) return;
 
+  if (actionBtn) setBtnLoading(actionBtn, true, 'Deleting…');
   try {
     const res = await apiFetch('support-inbox', {
       method: 'POST',
@@ -811,6 +817,8 @@ async function deleteConversation() {
     await loadConversations(false);
   } catch (error) {
     showToast(error.message, 'error');
+  } finally {
+    if (actionBtn) setBtnLoading(actionBtn, false);
   }
 }
 
