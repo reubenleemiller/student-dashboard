@@ -141,7 +141,7 @@ function injectStyles() {
       display: flex;
       flex-direction: column;
       min-height: 620px;
-      padding: .35rem .8rem .5rem;
+      padding: .75rem .8rem .5rem;
     }
     .support-conv {
       border: 1px solid var(--border);
@@ -290,6 +290,19 @@ function injectStyles() {
       display: flex;
       justify-content: space-between;
       gap: .75rem;
+    }
+    .support-msg-meta-right {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+    }
+    .support-read-receipt {
+      color: var(--text-muted);
+      font-size: .78rem;
+      line-height: 1;
+    }
+    .support-read-receipt.read {
+      color: var(--primary);
     }
     .support-thread-empty {
       display: flex;
@@ -500,6 +513,14 @@ function updateRealtimeThreadView(previousMessages, nextMessages, conversation) 
     messageWrap.insertAdjacentHTML('beforeend', renderMessageRow(message));
   }
 
+  const messageById = new Map(nextMessages.map((message) => [String(message.id || ''), message]));
+  messageWrap.querySelectorAll('[data-read-msg-id]').forEach((node) => {
+    const msgId = node.dataset.readMsgId || '';
+    const message = messageById.get(msgId);
+    if (!message || !message.from_admin) return;
+    node.innerHTML = renderReadReceipt(message);
+  });
+
   if (atBottom) {
     messageWrap.scrollTop = messageWrap.scrollHeight;
   }
@@ -537,6 +558,10 @@ function renderMessageRow(message) {
   const rowClass = isAdmin ? 'admin' : 'student';
   const avatar = initials(isAdmin ? state.currentAdminName : state.currentUserName);
   const senderName = isAdmin ? state.currentAdminName : state.currentUserName;
+  const metaTime = escapeHtml(formatDateTime(message.created_at));
+  const readReceipt = isAdmin
+    ? `<span class="support-read-slot" data-read-msg-id="${escapeHtml(String(message.id || ''))}">${renderReadReceipt(message)}</span>`
+    : '';
   return `
     <div class="support-msg-row ${rowClass}" data-msg-id="${escapeHtml(String(message.id || ''))}">
       <div class="support-msg-avatar">${escapeHtml(avatar)}</div>
@@ -544,10 +569,16 @@ function renderMessageRow(message) {
         <div class="support-msg-body">${escapeHtml(message.body)}</div>
         <div class="support-msg-meta">
           <span>${escapeHtml(senderName)}</span>
-          <span>${escapeHtml(formatDateTime(message.created_at))}${message.read_at ? ' · read' : ''}</span>
+          <span class="support-msg-meta-right"><span>${metaTime}</span>${readReceipt}</span>
         </div>
       </div>
     </div>`;
+}
+
+function renderReadReceipt(message) {
+  if (!message?.from_admin) return '';
+  const read = !!message.read_at;
+  return `<i class="fa-solid fa-check-double support-read-receipt${read ? ' read' : ''}" title="${read ? 'Read' : 'Sent'}" aria-label="${read ? 'Read' : 'Sent'}"></i>`;
 }
 
 function renderConversationList() {
