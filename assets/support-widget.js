@@ -372,30 +372,34 @@
         border-bottom: 1px solid var(--border, #e2e8f0);
         font-size: .73rem; transition: background .15s;
         display: flex; flex-direction: column; gap: 2px;
-        position: relative;
       }
       .sw-prev-item:last-child  { border-bottom: none; }
       .sw-prev-item:hover       { background: var(--primary-light, #edf7eb); }
       .sw-prev-item.sw-sel      { background: var(--primary-light, #edf7eb); }
+      .sw-prev-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .5rem;
+      }
       .sw-prev-date    { color: var(--text-muted, #64748b); font-size: .67rem; }
       .sw-prev-preview { color: var(--text, #1e293b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .sw-prev-del {
-        position: absolute;
-        top: .3rem;
-        right: .35rem;
-        width: 18px;
-        height: 18px;
         border: none;
-        border-radius: 999px;
-        background: transparent;
-        color: var(--text-muted, #64748b);
+        border-radius: 8px;
+        background: rgba(220,38,38,.08);
+        color: var(--danger, #dc2626);
         cursor: pointer;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: .65rem;
+        font-size: .67rem;
+        line-height: 1;
+        padding: .2rem .45rem;
+        font-weight: 600;
+        white-space: nowrap;
       }
-      .sw-prev-del:hover { color: var(--danger, #dc2626); background: rgba(220,38,38,.08); }
+      .sw-prev-del:hover { filter: brightness(.95); }
 
       /* Delete modal */
       #sw-delete-modal {
@@ -937,10 +941,10 @@
     list.innerHTML = _state.prevConvs.map(c => `
       <div class="sw-prev-item${_state.selectedPrevId === c.id ? ' sw-sel' : ''}"
            role="listitem" data-id="${esc(c.id)}">
-        <button class="sw-prev-del" data-del-id="${esc(c.id)}" title="Delete conversation" aria-label="Delete conversation">
-          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-        </button>
-        <span class="sw-prev-date">${esc(fmtDate(c.resolved_at || c.created_at))} · Resolved</span>
+        <div class="sw-prev-top">
+          <span class="sw-prev-date">${esc(fmtDate(c.resolved_at || c.created_at))} · Resolved</span>
+          <button class="sw-prev-del" data-del-id="${esc(c.id)}" title="Delete conversation" aria-label="Delete conversation">Delete</button>
+        </div>
         <span class="sw-prev-preview">${esc(c.last_message?.body || 'No messages')}</span>
       </div>`).join('');
 
@@ -1024,15 +1028,29 @@
   }
 
   function closeDeleteModal() {
+    const btn = document.getElementById('sw-delete-modal-confirm');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Delete conversation';
+    }
     _state.pendingDeleteId = null;
     toggleGone(document.getElementById('sw-delete-modal'), true);
   }
 
   async function confirmDeleteConv() {
     const id = _state.pendingDeleteId;
+    const btn = document.getElementById('sw-delete-modal-confirm');
     if (!id) return closeDeleteModal();
-    closeDeleteModal();
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Deleting';
+    }
     await deleteConv(id);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Delete conversation';
+    }
+    closeDeleteModal();
   }
 
   // ── Send message ──────────────────────────────────────────────────────
@@ -1043,6 +1061,7 @@
     if (!text) return;
 
     sendBtn.disabled  = true;
+    sendBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
     input.value       = '';
     input.style.height = 'auto';
 
@@ -1064,6 +1083,7 @@
       console.warn('[support-widget] sendMsg error:', err);
     } finally {
       sendBtn.disabled = false;
+      sendBtn.innerHTML = '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i>';
       focusInput();
     }
   }

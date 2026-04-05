@@ -119,12 +119,12 @@ function injectStyles() {
     .support-layout {
       display: grid;
       grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
-      gap: 1.9rem;
+      gap: 1.5rem;
       align-items: start;
-      margin-top: 1.2rem;
+      margin-top: .85rem;
     }
     #section-support .card.support-pane > .card-body {
-      padding: 1.25rem 1.35rem;
+      padding: 1rem 1.05rem;
     }
     .support-pane {
       min-height: 640px;
@@ -132,16 +132,16 @@ function injectStyles() {
     .support-list {
       display: flex;
       flex-direction: column;
-      gap: .7rem;
+      gap: .5rem;
       max-height: 680px;
       overflow: auto;
-      padding-right: .4rem;
+      padding-right: .25rem;
     }
     .support-thread {
       display: flex;
       flex-direction: column;
       min-height: 620px;
-      padding: .45rem .45rem .7rem;
+      padding: .35rem .3rem .5rem;
     }
     .support-conv {
       border: 1px solid var(--border);
@@ -206,8 +206,8 @@ function injectStyles() {
     }
     .support-thread-head {
       border-bottom: 1px solid var(--border);
-      padding-bottom: 1.15rem;
-      margin-bottom: 1.15rem;
+      padding-bottom: 1rem;
+      margin-bottom: 1rem;
     }
     .support-thread-head-top {
       display: flex;
@@ -228,7 +228,7 @@ function injectStyles() {
     .support-thread-body {
       display: flex;
       flex-direction: column;
-      gap: 1.15rem;
+      gap: 1rem;
       flex: 1;
       min-height: 0;
     }
@@ -268,7 +268,7 @@ function injectStyles() {
     .support-msg-content {
       max-width: min(720px, calc(100vw - 420px));
       min-width: 0;
-      padding: .7rem .85rem;
+      padding: .9rem 1.1rem;
       border-radius: 14px;
       border: 1px solid var(--border);
       background: var(--surface);
@@ -503,12 +503,32 @@ function updateRealtimeThreadView(previousMessages, nextMessages, conversation) 
     messageWrap.scrollTop = messageWrap.scrollHeight;
   }
 
-  const typingNode = document.getElementById('supportTypingLine');
-  if (typingNode) {
-    typingNode.innerHTML = conversation?.user_typing_at && isTypingRecently(conversation.user_typing_at)
-      ? '<i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Student is typing…'
-      : '';
+  const typingNode = document.getElementById('supportTypingBubble');
+  if (conversation?.user_typing_at && isTypingRecently(conversation.user_typing_at)) {
+    if (!typingNode) {
+      messageWrap.insertAdjacentHTML('beforeend', renderTypingRow());
+    }
+  } else {
+    typingNode?.remove();
   }
+
+  if (atBottom) {
+    messageWrap.scrollTop = messageWrap.scrollHeight;
+  }
+}
+
+function renderTypingRow() {
+  return `
+    <div class="support-msg-row student" id="supportTypingBubble">
+      <div class="support-msg-avatar">${escapeHtml(initials(state.currentUserName || 'Student'))}</div>
+      <div class="support-msg-content">
+        <div class="support-typing" aria-label="Student is typing">
+          <i class="fa-solid fa-pen-nib" aria-hidden="true"></i>
+          <span>Student is typing</span>
+          <span class="support-typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        </div>
+      </div>
+    </div>`;
 }
 
 function renderMessageRow(message) {
@@ -609,10 +629,6 @@ function renderThread() {
   const statusPill = resolved
     ? '<span class="support-pill"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Resolved</span>'
     : '<span class="support-pill"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i> Open</span>';
-  const typingLine = conversation.user_typing_at && isTypingRecently(conversation.user_typing_at)
-    ? '<i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Student is typing <span class="support-typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>'
-    : '';
-
   const headerButtons = resolved
     ? `
       <button type="button" class="btn btn-outline btn-sm" id="supportUnresolveBtn">Reopen</button>
@@ -624,6 +640,9 @@ function renderThread() {
   const messageHtml = messages.length
     ? messages.map((message) => renderMessageRow(message)).join('')
     : '<div class="support-thread-empty" style="min-height:220px;">No messages in this conversation yet.</div>';
+  const typingRow = conversation.user_typing_at && isTypingRecently(conversation.user_typing_at)
+    ? renderTypingRow()
+    : '';
 
   threadWrap.innerHTML = `
     <div class="support-thread support-pane">
@@ -640,8 +659,7 @@ function renderThread() {
         </div>
       </div>
       <div class="support-thread-body">
-        <div class="support-typing" id="supportTypingLine">${typingLine}</div>
-        <div class="support-thread-messages" id="supportThreadMessages">${messageHtml}</div>
+        <div class="support-thread-messages" id="supportThreadMessages">${messageHtml}${typingRow}</div>
         <form class="support-reply" id="supportReplyForm">
           <label for="supportReplyInput" class="bold">Reply to student</label>
           <textarea id="supportReplyInput" class="form-input" placeholder="Write your reply…"></textarea>
