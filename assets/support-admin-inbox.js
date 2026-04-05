@@ -525,32 +525,16 @@ function updateRealtimeThreadView(previousMessages, nextMessages, conversation) 
     messageWrap.scrollTop = messageWrap.scrollHeight;
   }
 
-  const typingNode = document.getElementById('supportTypingBubble');
-  if (conversation?.user_typing_at && isTypingRecently(conversation.user_typing_at)) {
-    if (!typingNode) {
-      messageWrap.insertAdjacentHTML('beforeend', renderTypingRow());
-    }
-  } else {
-    typingNode?.remove();
+  const typingNode = document.getElementById('supportTypingLine');
+  if (typingNode) {
+    typingNode.innerHTML = conversation?.user_typing_at && isTypingRecently(conversation.user_typing_at)
+      ? '<i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Student is typing <span class="support-typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>'
+      : '';
   }
 
   if (atBottom) {
     messageWrap.scrollTop = messageWrap.scrollHeight;
   }
-}
-
-function renderTypingRow() {
-  return `
-    <div class="support-msg-row student" id="supportTypingBubble">
-      <div class="support-msg-avatar">${escapeHtml(initials(state.currentUserName || 'Student'))}</div>
-      <div class="support-msg-content">
-        <div class="support-typing" aria-label="Student is typing">
-          <i class="fa-solid fa-pen-nib" aria-hidden="true"></i>
-          <span>Student is typing</span>
-          <span class="support-typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>
-        </div>
-      </div>
-    </div>`;
 }
 
 function renderMessageRow(message) {
@@ -661,6 +645,9 @@ function renderThread() {
   const statusPill = resolved
     ? '<span class="support-pill"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Resolved</span>'
     : '<span class="support-pill"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i> Open</span>';
+  const typingLine = conversation.user_typing_at && isTypingRecently(conversation.user_typing_at)
+    ? '<i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Student is typing <span class="support-typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>'
+    : '';
   const headerButtons = resolved
     ? `
       <button type="button" class="btn btn-outline btn-sm" id="supportUnresolveBtn">Reopen</button>
@@ -672,9 +659,6 @@ function renderThread() {
   const messageHtml = messages.length
     ? messages.map((message) => renderMessageRow(message)).join('')
     : '<div class="support-thread-empty" style="min-height:220px;">No messages in this conversation yet.</div>';
-  const typingRow = conversation.user_typing_at && isTypingRecently(conversation.user_typing_at)
-    ? renderTypingRow()
-    : '';
 
   threadWrap.innerHTML = `
     <div class="support-thread support-pane">
@@ -691,7 +675,8 @@ function renderThread() {
         </div>
       </div>
       <div class="support-thread-body">
-        <div class="support-thread-messages" id="supportThreadMessages">${messageHtml}${typingRow}</div>
+        <div class="support-typing" id="supportTypingLine">${typingLine}</div>
+        <div class="support-thread-messages" id="supportThreadMessages">${messageHtml}</div>
         <form class="support-reply" id="supportReplyForm">
           <label for="supportReplyInput" class="bold">Reply to student</label>
           <textarea id="supportReplyInput" class="form-input" placeholder="Write your reply…"></textarea>
