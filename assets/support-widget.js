@@ -16,7 +16,8 @@
   const TOAST_MS       = 6000;   // Toast auto-hide duration (ms)
   const ADMIN_TYPING_TTL = 8000; // How long to show "admin typing" (ms)
   const PRESENCE_MS    = 60000;
-  const MIN_SPINNER_MS = 2000;   // Minimum ms to show loading overlay
+  const MIN_SPINNER_MS = 2000;   // Minimum ms to show loading overlay (matches StudyGuide-Template)
+  const MAX_TOAST_PREVIEW = 60;  // Maximum characters in toast preview before truncation
 
   // ── Mutable state ────────────────────────────────────────────────────
   let _sb           = null;   // Supabase client
@@ -548,7 +549,15 @@
       #sw-toast.sw-toast-visible {
         opacity: 1; transform: translateY(0) scale(1); pointer-events: auto;
       }
-      .sw-toast-avatar { flex-shrink: 0; }
+      .sw-toast-avatar {
+        flex-shrink: 0;
+        width: 32px; height: 32px; border-radius: 50%;
+        background: var(--primary-light, #edf7eb);
+        color: var(--primary, #7FC571);
+        display: flex; align-items: center; justify-content: center;
+        font-size: .65rem; font-weight: 700;
+        overflow: hidden;
+      }
       .sw-toast-body { flex: 1; min-width: 0; }
       .sw-toast-sender {
         font-size: .74rem; font-weight: 700; color: #333;
@@ -842,7 +851,7 @@
         const lastAdmin = [..._state.messages].reverse().find(m => m.from_admin);
         if (lastAdmin) {
           const preview = (lastAdmin.body || '').trim();
-          showToast(_state.adminName, preview.length > 60 ? preview.slice(0, 60) + '…' : preview);
+          showToast(_state.adminName, preview.length > MAX_TOAST_PREVIEW ? preview.slice(0, MAX_TOAST_PREVIEW) + '…' : preview);
         }
       }
 
@@ -1249,10 +1258,7 @@
     // Populate content
     if (senderEl)  senderEl.textContent  = senderName || 'Support';
     if (previewEl) previewEl.textContent = msgPreview  || '';
-    if (avatarEl) {
-      avatarEl.style.cssText = 'width:32px;height:32px;border-radius:50%;background:var(--primary-light,#edf7eb);color:var(--primary,#7FC571);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;flex-shrink:0;';
-      avatarEl.textContent = initials(senderName || 'Support');
-    }
+    if (avatarEl)  avatarEl.textContent  = initials(senderName || 'Support');
 
     // Reset progress bar and animate
     clearTimeout(_state.toastTimer);
