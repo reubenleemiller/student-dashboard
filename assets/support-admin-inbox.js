@@ -5,6 +5,7 @@ const API = '/api';
 const TYPING_DEBOUNCE_MS = 1200;
 const TYPING_VISIBLE_MS = 8000;
 const POLL_MS = 5000;
+const PRESENCE_MS = 60000;
 
 const state = {
   supabase: null,
@@ -18,6 +19,7 @@ const state = {
   typingActive: false,
   typingConversationId: null,
   pollTimer: null,
+  presenceTimer: null,
   supportSectionActive: false,
 };
 
@@ -45,6 +47,7 @@ async function init() {
     state.supportSectionActive = true;
     await loadConversations(false);
     startPolling();
+    startPresencePing();
   }
 }
 
@@ -54,8 +57,10 @@ function wireGlobals() {
     if (section === 'support') {
       await loadConversations(false);
       startPolling();
+      startPresencePing();
     } else {
       stopPolling();
+      stopPresencePing();
       clearTimeout(state.typingTimer);
       if (state.typingActive && state.typingConversationId) {
         setTypingForConversation(state.typingConversationId, false);
@@ -72,7 +77,7 @@ function startPolling() {
   state.pollTimer = setInterval(async () => {
     if (!state.supportSectionActive || document.hidden) return;
     try {
-      await loadConversations(true);
+      await refreshRealtime();
     } catch {
       // best effort refresh
     }
@@ -86,6 +91,23 @@ function stopPolling() {
   }
 }
 
+function startPresencePing() {
+  if (state.presenceTimer) return;
+  const ping = () => apiFetch('ping-session').catch(() => {});
+  ping();
+  state.presenceTimer = setInterval(() => {
+    if (!state.supportSectionActive || document.hidden) return;
+    ping();
+  }, PRESENCE_MS);
+}
+
+function stopPresencePing() {
+  if (state.presenceTimer) {
+    clearInterval(state.presenceTimer);
+    state.presenceTimer = null;
+  }
+}
+
 function injectStyles() {
   if (document.getElementById('support-inbox-styles')) return;
   const style = document.createElement('style');
@@ -93,13 +115,16 @@ function injectStyles() {
   style.textContent = `
     .support-layout {
       display: grid;
-      grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-      gap: 1.25rem;
+      grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+      gap: 1.5rem;
       align-items: start;
-      margin-top: .5rem;
+      margin-top: .85rem;
+    }
+    #section-support .card.support-pane > .card-body {
+      padding: 1rem 1.05rem;
     }
     .support-pane {
-      min-height: 580px;
+      min-height: 640px;
     }
     .support-list {
       display: flex;
@@ -112,7 +137,8 @@ function injectStyles() {
     .support-thread {
       display: flex;
       flex-direction: column;
-      min-height: 580px;
+      min-height: 620px;
+      padding: .35rem .3rem .5rem;
     }
     .support-conv {
       border: 1px solid var(--border);
@@ -177,8 +203,8 @@ function injectStyles() {
     }
     .support-thread-head {
       border-bottom: 1px solid var(--border);
-      padding-bottom: .85rem;
-      margin-bottom: .85rem;
+      padding-bottom: 1rem;
+      margin-bottom: 1rem;
     }
     .support-thread-head-top {
       display: flex;
@@ -199,7 +225,7 @@ function injectStyles() {
     .support-thread-body {
       display: flex;
       flex-direction: column;
-      gap: .85rem;
+      gap: 1rem;
       flex: 1;
       min-height: 0;
     }
@@ -398,6 +424,88 @@ async function loadConversations(keepSelection = false) {
   }
 }
 
+async function refreshRealtime() {
+  const res = await apiFetch('support-inbox');
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to load support conversations');
+
+  state.conversations = json.conversations || [];
+  renderConversationList();
+
+  if (!state.currentConversationId) return;
+
+  const input = document.getElementById('supportReplyInput');
+  const composing = !!(
+    input && (
+      document.activeElement === input ||
+      state.typingActive ||
+      input.value.trim().length > 0
+    )
+  );
+
+  const threadRes = await apiFetch(`support-inbox?conversation_id=${encodeURIComponent(state.currentConversationId)}`);
+  const threadJson = await threadRes.json();
+  if (!threadRes.ok) return;
+
+  const previous = state.currentThread;
+  state.currentThread = threadJson;
+  state.currentUserName = threadJson.user_name || state.currentUserName;
+  state.currentAdminName = threadJson.admin_name || state.currentAdminName;
+
+  const threadExists = !!document.getElementById('supportThreadMessages');
+  const stateChanged = previous?.conversation?.resolved !== threadJson?.conversation?.resolved;
+  if (!threadExists || stateChanged) {
+    if (!composing) renderThread();
+    return;
+  }
+
+  updateRealtimeThreadView(previous?.messages || [], threadJson.messages || [], threadJson.conversation);
+}
+
+function updateRealtimeThreadView(previousMessages, nextMessages, conversation) {
+  const messageWrap = document.getElementById('supportThreadMessages');
+  if (!messageWrap) return;
+
+  const known = new Set(Array.from(messageWrap.querySelectorAll('[data-msg-id]')).map((node) => node.dataset.msgId));
+  const atBottom = (messageWrap.scrollHeight - messageWrap.clientHeight - messageWrap.scrollTop) < 60;
+
+  for (const message of nextMessages) {
+    const id = String(message.id || '');
+    if (!id || known.has(id)) continue;
+    known.add(id);
+    messageWrap.insertAdjacentHTML('beforeend', renderMessageRow(message));
+  }
+
+  if (atBottom) {
+    messageWrap.scrollTop = messageWrap.scrollHeight;
+  }
+
+  const typingNode = document.getElementById('supportTypingLine');
+  if (typingNode) {
+    typingNode.innerHTML = conversation?.user_typing_at && isTypingRecently(conversation.user_typing_at)
+      ? '<i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Student is typing…'
+      : '';
+  }
+}
+
+function renderMessageRow(message) {
+  const isAdmin = !!message.from_admin;
+  const rowClass = isAdmin ? 'admin' : 'student';
+  const avatar = initials(isAdmin ? state.currentAdminName : state.currentUserName);
+  const senderName = isAdmin ? state.currentAdminName : state.currentUserName;
+  return `
+    <div class="support-msg-row ${rowClass}" data-msg-id="${escapeHtml(String(message.id || ''))}">
+      <div class="support-msg-avatar">${escapeHtml(avatar)}</div>
+      <div class="support-msg-content">
+        <div class="support-msg-body">${escapeHtml(message.body)}</div>
+        <div class="support-msg-meta">
+          <span>${escapeHtml(senderName)}</span>
+          <span>${escapeHtml(formatDateTime(message.created_at))}${message.read_at ? ' · read' : ''}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderConversationList() {
   const listWrap = document.getElementById('supportConversationList');
   if (!listWrap) return;
@@ -478,8 +586,8 @@ function renderThread() {
     ? '<span class="support-pill"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Resolved</span>'
     : '<span class="support-pill"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i> Open</span>';
   const typingLine = conversation.user_typing_at && isTypingRecently(conversation.user_typing_at)
-    ? '<div class="support-typing"><i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Student is typing…</div>'
-    : '<div class="support-typing"></div>';
+    ? '<i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Student is typing…'
+    : '';
 
   const headerButtons = resolved
     ? `
@@ -490,23 +598,7 @@ function renderThread() {
       <button type="button" class="btn btn-danger btn-sm" id="supportDeleteBtn">Delete</button>`;
 
   const messageHtml = messages.length
-    ? messages.map((message) => {
-        const isAdmin = !!message.from_admin;
-        const rowClass = isAdmin ? 'admin' : 'student';
-        const avatar = initials(isAdmin ? state.currentAdminName : state.currentUserName);
-        const senderName = isAdmin ? state.currentAdminName : state.currentUserName;
-        return `
-          <div class="support-msg-row ${rowClass}">
-            <div class="support-msg-avatar">${escapeHtml(avatar)}</div>
-            <div class="support-msg-content">
-              <div class="support-msg-body">${escapeHtml(message.body)}</div>
-              <div class="support-msg-meta">
-                <span>${escapeHtml(senderName)}</span>
-                <span>${escapeHtml(formatDateTime(message.created_at))}${message.read_at ? ' · read' : ''}</span>
-              </div>
-            </div>
-          </div>`;
-      }).join('')
+    ? messages.map((message) => renderMessageRow(message)).join('')
     : '<div class="support-thread-empty" style="min-height:220px;">No messages in this conversation yet.</div>';
 
   threadWrap.innerHTML = `
@@ -524,7 +616,7 @@ function renderThread() {
         </div>
       </div>
       <div class="support-thread-body">
-        ${typingLine}
+        <div class="support-typing" id="supportTypingLine">${typingLine}</div>
         <div class="support-thread-messages" id="supportThreadMessages">${messageHtml}</div>
         <form class="support-reply" id="supportReplyForm">
           <label for="supportReplyInput" class="bold">Reply to student</label>
