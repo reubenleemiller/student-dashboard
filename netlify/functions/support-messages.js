@@ -127,7 +127,7 @@ exports.handler = async (event) => {
     );
 
     const adminRows = await sbFetch(
-      '/profiles?role=eq.admin&select=full_name,photo_url&limit=1'
+      '/profiles?role=eq.admin&select=full_name&limit=1'
     ).catch(() => []);
     const admin = Array.isArray(adminRows) && adminRows.length ? adminRows[0] : {};
 
@@ -140,9 +140,7 @@ exports.handler = async (event) => {
         unread_count:           unreadCount,
         previous_conversations: prevWithMeta,
         admin_name:             admin.full_name  || 'Support',
-        admin_photo:            admin.photo_url  || null,
         user_name:              profile?.full_name || user.email,
-        user_photo:             profile?.photo_url || null,
         admin_typing_at:        conversation?.admin_typing_at || null,
       }),
     };

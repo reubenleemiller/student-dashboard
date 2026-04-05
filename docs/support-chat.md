@@ -15,7 +15,7 @@ Add these to your **Netlify site environment variables** (Site settings → Envi
 |---------------------------|----------|-------------|
 | `SUPABASE_URL`            | ✅        | Already required – your Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅      | Already required – service-role key (never expose to browser) |
-| `ADMIN_EMAIL`             | optional | Email of the admin/tutor account. Used only for informational purposes in `get-collab-config` (currently unused). |
+| `ADMIN_EMAIL`             | optional | Email of the admin/tutor account. Used by the support inbox endpoints when present. |
 
 No new environment variables are strictly required beyond what the rest of the site
 already uses.
@@ -88,8 +88,8 @@ alter table public.support_messages       enable row level security;
 
 ## 3. Admin Profile Column
 
-The widget displays the admin's name and photo in the chat header and next to admin
-messages. It reads these from the `profiles` table where `role = 'admin'`.
+The widget and admin inbox display names only. No `photo_url` column is required for
+this site.
 
 Ensure your `profiles` table has (most of these likely already exist):
 
@@ -98,11 +98,10 @@ Ensure your `profiles` table has (most of these likely already exist):
 | `id`         | uuid   | FK → `auth.users.id` |
 | `role`       | text   | `'admin'` or `'student'` |
 | `full_name`  | text   | Displayed as the admin name in the chat header |
-| `photo_url`  | text   | URL to profile photo (optional; initials shown if absent) |
 
 If your profiles table uses different column names, update the queries in
-`netlify/functions/support-messages.js` and `netlify/functions/get-collab-config.js`
-accordingly.
+`netlify/functions/support-messages.js`, `netlify/functions/support-inbox.js`, and
+`assets/support-admin-inbox.js` accordingly.
 
 ---
 
@@ -118,7 +117,10 @@ accordingly.
 | `netlify/functions/support-messages.js` | **New** – GET messages / POST send message |
 | `netlify/functions/support-conversations.js` | **New** – resolve / reopen / delete conversation |
 | `netlify/functions/user-typing.js` | **New** – records user typing status |
+| `netlify/functions/support-inbox.js` | **New** – admin inbox list, thread detail, reply, resolve/unresolve/delete |
+| `netlify/functions/support-typing.js` | **New** – records admin typing status |
 | `dashboard.html` | **Modified** – adds `<script src="/assets/support-widget.js">` at end of body |
+| `admin.html` | **Modified** – adds support inbox section and script |
 | `netlify.toml` | **Modified** – adds `/api/…` redirect rules for new functions |
 | `docs/support-chat.md` | **New** – this file |
 
@@ -132,7 +134,7 @@ The widget uses the CSS custom properties already defined in `css/styles.css`:
 |----------------|-------------------|
 | FAB, send button, user messages | `--primary` |
 | FAB hover, send hover | `--primary-hover` |
-| Admin avatar background, hover highlight | `--primary-light` |
+| Avatar background, hover highlight | `--primary-light` |
 | Unread badge | `--danger` |
 | Resolved banner | `--success`, `--success-light` |
 | Panel background | `--surface` |
@@ -148,12 +150,14 @@ re-themes the widget.
 
 ## 6. Admin Reply Flow
 
-The admin reply UI is not included in this PR. The admin can currently:
+The admin inbox is available in `admin.html` and uses `support-inbox` plus
+`support-typing`:
 
-- Reply by inserting rows directly into `support_messages` via **Supabase Studio**
-  (set `from_admin = true`, `conversation_id` matching the student's conversation,
-  and `user_id` / `user_email` to any placeholder value since `from_admin = true` is
-  what the widget checks).
-- Set `admin_typing_at` to `now()` to show the typing indicator in the student's widget.
-- A future admin UI panel can be added to `admin.html` without changing any of the
-  above schema or widget code.
+- `GET /.netlify/functions/support-inbox` lists all conversations.
+- `GET /.netlify/functions/support-inbox?conversation_id=<id>` loads one thread.
+- `POST /.netlify/functions/support-inbox` with `action: 'reply'` sends an admin reply.
+- `POST /.netlify/functions/support-inbox` with `action: 'resolve' | 'unresolve' | 'delete'`
+  manages the thread state.
+- `POST /.netlify/functions/support-typing` updates the admin typing indicator.
+
+No profile photo or storage signing is required for support chat on this site.

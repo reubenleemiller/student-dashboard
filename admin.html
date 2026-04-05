@@ -29,6 +29,9 @@
         <a class="nav-item" data-section="storage" href="#">
           <span class="nav-icon"><i class="fa-solid fa-folder" aria-hidden="true"></i></span> Storage Browser
         </a>
+        <a class="nav-item" data-section="support" href="#">
+          <span class="nav-icon"><i class="fa-solid fa-comments" aria-hidden="true"></i></span> Support Inbox
+        </a>
       </nav>
       <div class="sidebar-footer">
         <div class="user-info" id="userInfo"></div>
@@ -138,6 +141,36 @@
           <ul id="adminUploadProgressList" class="upload-progress-list hidden" aria-live="polite" aria-label="Upload progress"></ul>
         </div>
       </section>
+
+      <!-- ── SUPPORT INBOX ─────────────────────────────────────────── -->
+      <section id="section-support" class="section">
+        <div class="page-header">
+          <div>
+            <h1>Support Inbox</h1>
+            <p>Review conversations, reply to students, and resolve threads.</p>
+          </div>
+          <div>
+            <button class="btn btn-outline btn-sm" id="supportInboxRefreshBtn">
+              <i class="fa-solid fa-rotate" aria-hidden="true"></i> Refresh
+            </button>
+          </div>
+        </div>
+
+        <div class="support-layout">
+          <div class="card support-pane">
+            <div class="card-header">
+              <h2 class="text-sm bold">Conversations</h2>
+            </div>
+            <div class="card-body" id="supportConversationList">
+              <div class="loading-state"><span class="spinner"></span> Loading…</div>
+            </div>
+          </div>
+
+          <div class="card support-pane" id="supportThreadWrap">
+            <div class="support-thread-empty">Select a conversation to review the thread.</div>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -228,6 +261,7 @@
       document.querySelector(`.nav-item[data-section="${sec}"]`)?.classList.add('active');
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       document.getElementById(`section-${sec}`)?.classList.add('active');
+      window.__adminSupportInboxOnSectionChange?.(sec);
       if (window.innerWidth <= 768) sidebar.classList.remove('open');
     }
 
@@ -1123,5 +1157,6 @@
     // ── Init ──────────────────────────────────────────────────────────
     await loadStudents();
   </script>
+  <script type="module" src="/assets/support-admin-inbox.js"></script>
 </body>
 </html>

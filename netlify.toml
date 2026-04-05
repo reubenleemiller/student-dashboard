@@ -93,3 +93,13 @@
   from = "/api/user-typing"
   to = "/.netlify/functions/user-typing"
   status = 200
+
+[[redirects]]
+  from = "/api/support-inbox"
+  to = "/.netlify/functions/support-inbox"
+  status = 200
+
+[[redirects]]
+  from = "/api/support-typing"
+  to = "/.netlify/functions/support-typing"
+  status = 200
