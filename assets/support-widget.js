@@ -71,7 +71,7 @@
       injectStyles();
       buildDOM();
       attachEvents();
-      await loadMessages(false);
+      await loadMessages(false, true);
       startPolling();
       startPresencePing();
     } catch (err) {
@@ -604,7 +604,7 @@
       _state.selectedPrevId = null;
       _state.loading = true;
       renderMessages();
-      await loadMessages(true);
+      await loadMessages(true, true);
       focusInput();
     } else {
       panel.classList.add('sw-gone');
@@ -620,10 +620,10 @@
   }
 
   // ── Load messages ─────────────────────────────────────────────────────
-  async function loadMessages(markRead = false) {
+  async function loadMessages(markRead = false, showLoading = false) {
     try {
       _state.loading = true;
-      if (_state.open) renderMessages();
+      if (showLoading && _state.open) renderMessages();
       const ep = (markRead && _state.open)
         ? 'support-messages?mark_read=1'
         : 'support-messages';
@@ -659,13 +659,13 @@
       console.warn('[support-widget] loadMessages error:', err);
     } finally {
       _state.loading = false;
-      if (_state.open) renderMessages();
+      if (showLoading && _state.open) renderMessages();
     }
   }
 
   function startPolling() {
     clearInterval(_state.pollTimer);
-    _state.pollTimer = setInterval(() => loadMessages(_state.open), POLL_MS);
+    _state.pollTimer = setInterval(() => loadMessages(_state.open, false), POLL_MS);
   }
 
   function startPresencePing() {
@@ -848,7 +848,7 @@
         method: 'POST',
         body: JSON.stringify({ action: 'resolve_own', conversation_id: id }),
       });
-      await loadMessages(false);
+      await loadMessages(false, false);
     } catch (err) {
       console.warn('[support-widget] resolveConv error:', err);
     } finally {
@@ -871,7 +871,7 @@
         body: JSON.stringify({ action: 'reopen_own', conversation_id: id }),
       });
       _state.selectedPrevId = null;
-      await loadMessages(false);
+      await loadMessages(false, false);
     } catch (err) {
       console.warn('[support-widget] reopenConv error:', err);
     }
@@ -889,7 +889,7 @@
       });
       _state.selectedPrevId = null;
       delete _state.prevMsgCache[id];
-      await loadMessages(false);
+      await loadMessages(false, false);
     } catch (err) {
       console.warn('[support-widget] deleteConv error:', err);
     }
@@ -919,7 +919,7 @@
         method: 'POST',
         body:   JSON.stringify({ message: text }),
       });
-      if (res.ok) await loadMessages(true);
+      if (res.ok) await loadMessages(true, false);
     } catch (err) {
       console.warn('[support-widget] sendMsg error:', err);
     } finally {
