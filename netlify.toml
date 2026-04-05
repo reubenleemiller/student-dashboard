@@ -63,3 +63,33 @@
   from = "/api/auth-check-provider"
   to = "/.netlify/functions/auth-check-provider"
   status = 200
+
+[[redirects]]
+  from = "/api/whoami"
+  to = "/.netlify/functions/whoami"
+  status = 200
+
+[[redirects]]
+  from = "/api/user-profile"
+  to = "/.netlify/functions/user-profile"
+  status = 200
+
+[[redirects]]
+  from = "/api/ping-session"
+  to = "/.netlify/functions/ping-session"
+  status = 200
+
+[[redirects]]
+  from = "/api/support-messages"
+  to = "/.netlify/functions/support-messages"
+  status = 200
+
+[[redirects]]
+  from = "/api/support-conversations"
+  to = "/.netlify/functions/support-conversations"
+  status = 200
+
+[[redirects]]
+  from = "/api/user-typing"
+  to = "/.netlify/functions/user-typing"
+  status = 200
