@@ -579,14 +579,14 @@
       return;
     }
 
-    const atBottom = nearBottom(container);
-    const msgHtml  = _state.messages.map(msgHtml).join('');
+    const atBottom    = nearBottom(container);
+    const renderedMsgs = _state.messages.map(msgHtml).join('');
     const typing   = isAdminTyping()
       ? `<div class="sw-typing" aria-label="${esc(_state.adminName)} is typing">
            <span></span><span></span><span></span>
          </div>` : '';
 
-    container.innerHTML = msgHtml + typing;
+    container.innerHTML = renderedMsgs + typing;
     if (atBottom) container.scrollTop = container.scrollHeight;
   }
 

@@ -87,23 +87,25 @@ exports.handler = async (event) => {
       Array.isArray(activeConvs) && activeConvs.length ? activeConvs[0] : null;
 
     let messages = [];
+    let unreadCount = 0;
     if (conversation) {
       messages = await sbFetch(
         `/support_messages?conversation_id=eq.${conversation.id}&order=created_at.asc`
       ).catch(() => []) || [];
 
-      if (markRead) {
-        const unread = messages.filter(m => m.from_admin && !m.read_at);
-        if (unread.length) {
-          const now = new Date().toISOString();
-          await sbFetch(
-            `/support_messages?conversation_id=eq.${conversation.id}&from_admin=eq.true&read_at=is.null`,
-            { method: 'PATCH', body: JSON.stringify({ read_at: now }) }
-          ).catch(() => {});
-          messages = messages.map(m =>
-            (m.from_admin && !m.read_at) ? { ...m, read_at: now } : m
-          );
-        }
+      const unreadMsgs = messages.filter(m => m.from_admin && !m.read_at);
+      unreadCount = unreadMsgs.length;
+
+      if (markRead && unreadCount > 0) {
+        const now = new Date().toISOString();
+        await sbFetch(
+          `/support_messages?conversation_id=eq.${conversation.id}&from_admin=eq.true&read_at=is.null`,
+          { method: 'PATCH', body: JSON.stringify({ read_at: now }) }
+        ).catch(() => {});
+        messages = messages.map(m =>
+          (m.from_admin && !m.read_at) ? { ...m, read_at: now } : m
+        );
+        unreadCount = 0; // all just marked read
       }
     }
 
@@ -123,8 +125,6 @@ exports.handler = async (event) => {
         };
       })
     );
-
-    const unreadCount = messages.filter(m => m.from_admin && !m.read_at).length;
 
     const adminRows = await sbFetch(
       '/profiles?role=eq.admin&select=full_name,photo_url&limit=1'
