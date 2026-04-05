@@ -168,6 +168,14 @@ exports.handler = async (event) => {
         };
 
       case 'delete_own':
+        if (!conv.resolved) {
+          return {
+            statusCode: 400,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ error: 'Only resolved conversations can be deleted.' }),
+          };
+        }
+
         // Delete messages first (FK constraint), then the conversation
         await sbFetch(
           `/support_messages?conversation_id=eq.${encodeURIComponent(conversation_id)}`,

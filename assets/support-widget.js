@@ -15,6 +15,7 @@
   const TYPING_S = 3000;   // Typing-stop debounce (ms)
   const TOAST_MS = 6000;   // Toast auto-hide duration (ms)
   const ADMIN_TYPING_TTL = 8000; // How long to show "admin typing" (ms)
+  const PRESENCE_MS = 60000;
 
   // ── Mutable state ────────────────────────────────────────────────────
   let _sb           = null;   // Supabase client
@@ -34,6 +35,7 @@
     isTyping:       false,
     typingTimer:    null,
     pollTimer:      null,
+    presenceTimer:  null,
     toastTimer:     null,
   };
 
@@ -70,6 +72,7 @@
       attachEvents();
       await loadMessages(false);
       startPolling();
+      startPresencePing();
     } catch (err) {
       console.warn('[support-widget] init error:', err);
     }
@@ -176,6 +179,22 @@
       }
       .sw-ibtn:hover        { background: rgba(255,255,255,.2); color: #fff; }
       .sw-ibtn:focus-visible { outline: 1px solid rgba(255,255,255,.7); }
+      .sw-resolve-btn {
+        background: rgba(255,255,255,.2);
+        border: 1px solid rgba(255,255,255,.35);
+        color: #fff;
+        border-radius: 999px;
+        font-size: .72rem;
+        font-weight: 600;
+        line-height: 1;
+        padding: .35rem .65rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+      }
+      .sw-resolve-btn:hover:not(:disabled) { background: rgba(255,255,255,.28); }
+      .sw-resolve-btn:disabled { opacity: .75; cursor: default; }
 
       /* Resolved banner */
       #sw-res-banner {
@@ -354,13 +373,41 @@
       #sw-toast {
         position: fixed; bottom: 90px; right: 24px;
         background: var(--text, #1e293b); color: #fff;
-        padding: .6rem 1rem; border-radius: 8px;
+        padding: 0; border-radius: 10px;
         font-size: .78rem; max-width: 280px; line-height: 1.4;
-        z-index: 9001; cursor: pointer;
+        z-index: 9001;
         box-shadow: 0 4px 14px rgba(0,0,0,.2);
         transition: opacity .3s, transform .3s;
+        overflow: hidden;
       }
       #sw-toast.sw-gone { opacity: 0; transform: translateY(6px); pointer-events: none; }
+      .sw-toast-inner {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: .25rem;
+        align-items: start;
+        padding: .6rem .7rem .5rem .8rem;
+        cursor: pointer;
+      }
+      .sw-toast-text { overflow: hidden; text-overflow: ellipsis; }
+      .sw-toast-close {
+        border: none; background: transparent; color: rgba(255,255,255,.85);
+        cursor: pointer; font-size: .8rem; line-height: 1; padding: .2rem;
+      }
+      .sw-toast-close:hover { color: #fff; }
+      .sw-toast-progress {
+        height: 3px;
+        width: 100%;
+        background: rgba(255,255,255,.35);
+        transform-origin: left center;
+        animation-name: sw-toast-progress;
+        animation-timing-function: linear;
+        animation-fill-mode: forwards;
+      }
+      @keyframes sw-toast-progress {
+        from { transform: scaleX(1); }
+        to   { transform: scaleX(0); }
+      }
 
       @media (max-width: 420px) {
         #sw-panel { width: calc(100vw - 32px); right: 16px; bottom: 82px; }
@@ -389,8 +436,8 @@
           <div class="sw-hsub">Support</div>
         </div>
         <div class="sw-hbtns">
-          <button class="sw-ibtn sw-gone" id="sw-resolve-btn" title="Mark conversation resolved">
-            <i class="fa-solid fa-check" aria-hidden="true"></i>
+          <button class="sw-resolve-btn sw-gone" id="sw-resolve-btn" title="Mark conversation resolved">
+            <span class="sw-resolve-label">Resolve</span>
           </button>
           <button class="sw-ibtn" id="sw-close-btn" title="Close" aria-label="Close chat">
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
@@ -425,6 +472,15 @@
 
     // Toast
     const toast = el('div', { id: 'sw-toast', class: 'sw-gone', role: 'alert', 'aria-live': 'assertive' });
+    toast.innerHTML = `
+      <div class="sw-toast-inner" id="sw-toast-open">
+        <div class="sw-toast-text" id="sw-toast-text"></div>
+        <button class="sw-toast-close" id="sw-toast-close" aria-label="Dismiss notification">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="sw-toast-progress" id="sw-toast-progress"></div>
+    `;
 
     document.body.appendChild(fab);
     document.body.appendChild(panel);
@@ -464,9 +520,13 @@
       if (id) deleteConv(id);
     });
     document.getElementById('sw-prev-toggle').addEventListener('click', togglePrev);
-    document.getElementById('sw-toast').addEventListener('click', () => {
+    document.getElementById('sw-toast-open').addEventListener('click', () => {
       hideToast();
       openPanel(true);
+    });
+    document.getElementById('sw-toast-close').addEventListener('click', (event) => {
+      event.stopPropagation();
+      hideToast();
     });
 
     document.addEventListener('keydown', (e) => {
@@ -562,6 +622,13 @@
   function startPolling() {
     clearInterval(_state.pollTimer);
     _state.pollTimer = setInterval(() => loadMessages(_state.open), POLL_MS);
+  }
+
+  function startPresencePing() {
+    clearInterval(_state.presenceTimer);
+    const ping = () => apiFetch('ping-session').catch(() => {});
+    ping();
+    _state.presenceTimer = setInterval(ping, PRESENCE_MS);
   }
 
   // ── Render messages ───────────────────────────────────────────────────
@@ -713,6 +780,10 @@
   async function resolveConv() {
     const id = _state.conversation?.id;
     if (!id) return;
+    const btn = document.getElementById('sw-resolve-btn');
+    const label = btn?.querySelector('.sw-resolve-label');
+    if (btn) btn.disabled = true;
+    if (label) label.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Resolving';
     try {
       await apiFetch('support-conversations', {
         method: 'POST',
@@ -721,6 +792,9 @@
       await loadMessages(false);
     } catch (err) {
       console.warn('[support-widget] resolveConv error:', err);
+    } finally {
+      if (btn) btn.disabled = false;
+      if (label) label.textContent = 'Resolve';
     }
   }
 
@@ -857,8 +931,16 @@
   // ── Toast ─────────────────────────────────────────────────────────────
   function showToast(text) {
     const toast = document.getElementById('sw-toast');
+    const toastText = document.getElementById('sw-toast-text');
+    const progress = document.getElementById('sw-toast-progress');
     if (!toast) return;
-    toast.textContent = text;
+    if (toastText) toastText.textContent = text;
+    if (progress) {
+      progress.style.animation = 'none';
+      // Force reflow so the animation reliably restarts.
+      void progress.offsetHeight;
+      progress.style.animation = `sw-toast-progress ${TOAST_MS}ms linear forwards`;
+    }
     toast.classList.remove('sw-gone');
     clearTimeout(_state.toastTimer);
     _state.toastTimer = setTimeout(hideToast, TOAST_MS);
