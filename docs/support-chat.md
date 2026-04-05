@@ -16,9 +16,16 @@ Add these to your **Netlify site environment variables** (Site settings → Envi
 | `SUPABASE_URL`            | ✅        | Already required – your Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅      | Already required – service-role key (never expose to browser) |
 | `ADMIN_EMAIL`             | optional | Email of the admin/tutor account. Used by the support inbox endpoints when present. |
+| `RESEND_API_KEY`          | recommended | Enables support reply/transcript email notifications. |
+| `RESEND_FROM_EMAIL`       | optional | Custom sender address for Resend (must be verified in Resend). |
+| `SITE_URL`                | recommended | Public site URL used in email CTA links (e.g. `https://yoursite.netlify.app`). |
+| `SITE_TITLE`              | optional | Display title used in email subject/body. Defaults to `RM Tutoring`. |
 
 No new environment variables are strictly required beyond what the rest of the site
 already uses.
+
+If `RESEND_API_KEY` is not set, support messages still work in-app, but email
+notifications and transcripts are skipped.
 
 ---
 
@@ -50,6 +57,7 @@ create table if not exists public.support_messages (
   body            text        not null,
   from_admin      boolean     not null default false,
   read_at         timestamptz,   -- set when the recipient reads the message
+  notified_at     timestamptz,   -- set when an immediate reply-notification email is sent
   created_at      timestamptz not null default now()
 );
 ```
@@ -98,6 +106,17 @@ Ensure your `profiles` table has (most of these likely already exist):
 | `id`         | uuid   | FK → `auth.users.id` |
 | `role`       | text   | `'admin'` or `'student'` |
 | `full_name`  | text   | Displayed as the admin name in the chat header |
+| `last_seen_at` | timestamptz | Updated by `ping-session`; used to decide when to send email notifications |
+
+Migration helpers for existing projects:
+
+```sql
+alter table public.support_messages
+  add column if not exists notified_at timestamptz;
+
+alter table public.profiles
+  add column if not exists last_seen_at timestamptz;
+```
 
 If your profiles table uses different column names, update the queries in
 `netlify/functions/support-messages.js`, `netlify/functions/support-inbox.js`, and

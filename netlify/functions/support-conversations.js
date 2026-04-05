@@ -11,8 +11,10 @@
 
 const SUPABASE_URL          = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SITE_URL              = (process.env.SITE_URL || '').replace(/\/$/, '');
 
 const { authenticate } = require('./_auth.js');
+const { sendEmail, escHtml, getSiteTitle } = require('./_email.js');
 
 async function sbFetch(path, opts = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
@@ -30,6 +32,22 @@ async function sbFetch(path, opts = {}) {
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   if (!res.ok) throw new Error(`DB ${res.status}: ${JSON.stringify(data)}`);
   return data;
+}
+
+async function buildTranscriptRows(conversationId, userLabel) {
+  const messages = await sbFetch(
+    `/support_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&select=body,from_admin,created_at&order=created_at.asc`
+  ).catch(() => []);
+
+  return (messages || []).map((message) => {
+    const sender = message.from_admin ? 'Support Team' : escHtml(userLabel);
+    const time = new Date(message.created_at).toLocaleString();
+    return '<tr>' +
+      `<td style="padding:6px 12px;white-space:nowrap;color:#555;font-size:0.88em;">${sender}</td>` +
+      `<td style="padding:6px 12px;white-space:nowrap;color:#999;font-size:0.82em;">${escHtml(time)}</td>` +
+      `<td style="padding:6px 12px;word-break:break-word;">${escHtml(message.body)}</td>` +
+      '</tr>';
+  }).join('');
 }
 
 exports.handler = async (event) => {
@@ -103,6 +121,32 @@ exports.handler = async (event) => {
             body: JSON.stringify({ resolved: true, resolved_at: new Date().toISOString() }),
           }
         );
+
+        try {
+          const siteTitle = getSiteTitle();
+          const userLabel = auth.profile?.full_name || user.email;
+          const rows = await buildTranscriptRows(conversation_id, userLabel);
+          await sendEmail({
+            to: user.email,
+            subject: `Your support conversation has been resolved - ${siteTitle}`,
+            html: `
+              <p>Hello ${escHtml(userLabel)},</p>
+              <p>Your support conversation on <em>${escHtml(siteTitle)}</em> has been marked as resolved. Here is a transcript:</p>
+              <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:0.95em;">
+                <thead><tr style="background:#f5f5f5;">
+                  <th style="padding:6px 12px;text-align:left;border-bottom:2px solid #7FC571;">From</th>
+                  <th style="padding:6px 12px;text-align:left;border-bottom:2px solid #7FC571;">Time</th>
+                  <th style="padding:6px 12px;text-align:left;border-bottom:2px solid #7FC571;">Message</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+              ${SITE_URL ? `<p style="margin:24px 0;"><a href="${SITE_URL}/dashboard.html" style="background:#7FC571;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;">Open Dashboard</a></p>` : ''}
+            `,
+          });
+        } catch (emailErr) {
+          console.error('support-conversations resolve_own transcript email failed', emailErr);
+        }
+
         return {
           statusCode: 200,
           headers: { 'Content-Type': 'application/json' },

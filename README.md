@@ -186,6 +186,11 @@ ngrok http 8888
 | `SUPABASE_ANON_KEY` | `public-config` function (served to browser at runtime) | Public anon key — never hard-coded in repo |
 | `SUPABASE_SERVICE_ROLE_KEY` | Netlify Functions only | Admin key — never expose to browser; required by `admin-invite-student`, `admin-delete-user`, `admin-delete-booking`, and `delete-account` |
 | `CAL_WEBHOOK_SECRET` | `netlify/functions/cal-webhook.js` | HMAC secret to verify Cal.com payloads |
+| `ADMIN_EMAIL` | Support functions + admin checks | Admin/tutor account email used for support authorization and notifications |
+| `RESEND_API_KEY` | Support functions (`support-messages`, `support-inbox`, `support-conversations`) | Enables support reply + transcript email notifications |
+| `RESEND_FROM_EMAIL` | Support email helper | Optional sender override for Resend emails |
+| `SITE_URL` | Support email helper | Used for dashboard/admin CTA links in support notification emails |
+| `SITE_TITLE` | Support email helper | Optional site name in support email subjects/content |
 
 ---
 
