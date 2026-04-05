@@ -675,8 +675,8 @@ function renderThread() {
         </div>
       </div>
       <div class="support-thread-body">
-        <div class="support-typing" id="supportTypingLine">${typingLine}</div>
         <div class="support-thread-messages" id="supportThreadMessages">${messageHtml}</div>
+        <div class="support-typing" id="supportTypingLine">${typingLine}</div>
         <form class="support-reply" id="supportReplyForm">
           <label for="supportReplyInput" class="bold">Reply to student</label>
           <textarea id="supportReplyInput" class="form-input" placeholder="Write your reply…"></textarea>
