@@ -28,6 +28,7 @@
     showPrev:       false,    // Whether prev-convs section is expanded
     selectedPrevId: null,     // Viewing a specific past conversation
     prevMsgCache:   {},       // Cache of messages keyed by conversation_id
+    pendingDeleteId: null,
     adminName:      'Support',
     userName:       null,
     adminTypingAt:  null,
@@ -347,7 +348,11 @@
       #sw-send:disabled { opacity: .55; cursor: not-allowed; }
 
       /* Previous conversations */
-      #sw-prev-wrap { border-top: 1px solid var(--border, #e2e8f0); flex-shrink: 0; }
+      #sw-prev-wrap {
+        border-top: 1px solid var(--border, #e2e8f0);
+        flex-shrink: 0;
+        order: 1;
+      }
       #sw-prev-toggle {
         width: 100%; background: transparent; border: none;
         padding: .45rem 1rem; font-size: .73rem;
@@ -391,6 +396,91 @@
         font-size: .65rem;
       }
       .sw-prev-del:hover { color: var(--danger, #dc2626); background: rgba(220,38,38,.08); }
+
+      /* Delete modal */
+      #sw-delete-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 9002;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+      }
+      .sw-delete-modal-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(15, 23, 42, .55);
+        backdrop-filter: blur(2px);
+      }
+      .sw-delete-modal-card {
+        position: relative;
+        width: min(320px, calc(100vw - 2rem));
+        background: var(--surface, #fff);
+        border: 1px solid var(--border, #e2e8f0);
+        border-radius: 16px;
+        box-shadow: 0 18px 60px rgba(0, 0, 0, .22);
+        padding: 1rem;
+        color: var(--text, #1e293b);
+      }
+      .sw-delete-modal-close {
+        position: absolute;
+        top: .6rem;
+        right: .6rem;
+        width: 30px;
+        height: 30px;
+        border: none;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--text-muted, #64748b);
+        cursor: pointer;
+      }
+      .sw-delete-modal-close:hover { background: var(--bg, #f8fafc); }
+      .sw-delete-modal-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(220, 38, 38, .1);
+        color: var(--danger, #dc2626);
+        margin-bottom: .75rem;
+      }
+      .sw-delete-modal-title {
+        margin: 0 2rem .4rem 0;
+        font-size: .98rem;
+        line-height: 1.3;
+      }
+      .sw-delete-modal-copy {
+        margin: 0;
+        color: var(--text-muted, #64748b);
+        font-size: .84rem;
+        line-height: 1.45;
+      }
+      .sw-delete-modal-actions {
+        display: flex;
+        gap: .5rem;
+        justify-content: flex-end;
+        margin-top: 1rem;
+      }
+      .sw-delete-modal-btn {
+        border-radius: 10px;
+        border: 1px solid var(--border, #e2e8f0);
+        padding: .55rem .85rem;
+        font-size: .82rem;
+        cursor: pointer;
+      }
+      .sw-delete-modal-btn.secondary {
+        background: var(--surface, #fff);
+        color: var(--text, #1e293b);
+      }
+      .sw-delete-modal-btn.primary {
+        background: var(--danger, #dc2626);
+        border-color: var(--danger, #dc2626);
+        color: #fff;
+      }
+      .sw-delete-modal-btn.primary:hover { filter: brightness(.96); }
 
       /* Back bar (inside message area when viewing past conv) */
       .sw-back-bar {
@@ -482,6 +572,14 @@
         </div>
       </div>
 
+      <div id="sw-prev-wrap">
+        <button id="sw-prev-toggle" aria-expanded="false">
+          <span>Previous conversations</span>
+          <i class="fa-solid fa-chevron-down" aria-hidden="true" id="sw-prev-chevron"></i>
+        </button>
+        <div id="sw-prev-list" class="sw-gone" role="list"></div>
+      </div>
+
       <div id="sw-res-banner" class="sw-gone">
         <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
         Conversation resolved
@@ -497,13 +595,24 @@
           <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
         </button>
       </div>
+    `;
 
-      <div id="sw-prev-wrap">
-        <button id="sw-prev-toggle" aria-expanded="false">
-          <span>Previous conversations</span>
-          <i class="fa-solid fa-chevron-down" aria-hidden="true" id="sw-prev-chevron"></i>
+    const deleteModal = el('div', { id: 'sw-delete-modal', class: 'sw-gone', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'sw-delete-modal-title' });
+    deleteModal.innerHTML = `
+      <div class="sw-delete-modal-backdrop" data-sw-delete-close="true"></div>
+      <div class="sw-delete-modal-card">
+        <button class="sw-delete-modal-close" id="sw-delete-modal-close" aria-label="Close delete dialog">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>
-        <div id="sw-prev-list" class="sw-gone" role="list"></div>
+        <div class="sw-delete-modal-icon" aria-hidden="true">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+        </div>
+        <h2 class="sw-delete-modal-title" id="sw-delete-modal-title">Delete this resolved conversation?</h2>
+        <p class="sw-delete-modal-copy">This will permanently remove the conversation and all of its messages. You can dismiss this dialog without deleting anything.</p>
+        <div class="sw-delete-modal-actions">
+          <button type="button" class="sw-delete-modal-btn secondary" id="sw-delete-modal-cancel">Cancel</button>
+          <button type="button" class="sw-delete-modal-btn primary" id="sw-delete-modal-confirm">Delete conversation</button>
+        </div>
       </div>
     `;
 
@@ -521,6 +630,7 @@
 
     document.body.appendChild(fab);
     document.body.appendChild(panel);
+    document.body.appendChild(deleteModal);
     document.body.appendChild(toast);
 
     setAdminAvatar();
@@ -554,9 +664,15 @@
     document.getElementById('sw-reopen-btn').addEventListener('click', reopenConv);
     document.getElementById('sw-delete-btn').addEventListener('click', () => {
       const id = _state.conversation?.id;
-      if (id) deleteConv(id);
+      if (id) openDeleteModal(id);
     });
     document.getElementById('sw-prev-toggle').addEventListener('click', togglePrev);
+    document.getElementById('sw-delete-modal-close').addEventListener('click', closeDeleteModal);
+    document.getElementById('sw-delete-modal-cancel').addEventListener('click', closeDeleteModal);
+    document.getElementById('sw-delete-modal-confirm').addEventListener('click', confirmDeleteConv);
+    document.getElementById('sw-delete-modal').addEventListener('click', (event) => {
+      if (event.target?.dataset?.swDeleteClose === 'true') closeDeleteModal();
+    });
     document.getElementById('sw-toast-open').addEventListener('click', () => {
       hideToast();
       openPanel(true);
@@ -567,7 +683,12 @@
     });
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && _state.open) openPanel(false);
+      if (e.key !== 'Escape') return;
+      if (!document.getElementById('sw-delete-modal')?.classList.contains('sw-gone')) {
+        closeDeleteModal();
+        return;
+      }
+      if (_state.open) openPanel(false);
     });
   }
 
@@ -794,7 +915,7 @@
 
     document.getElementById('sw-back-btn')?.addEventListener('click', backToActive);
     document.getElementById('sw-prev-reopen-btn')?.addEventListener('click', () => reopenSpecificConv(convId));
-    document.getElementById('sw-prev-delete-btn')?.addEventListener('click', () => deleteConv(convId));
+    document.getElementById('sw-prev-delete-btn')?.addEventListener('click', () => openDeleteModal(convId));
   }
 
   function backToActive() {
@@ -834,7 +955,7 @@
     list.querySelectorAll('.sw-prev-del').forEach((btn) => {
       btn.addEventListener('click', (event) => {
         event.stopPropagation();
-        deleteConv(btn.dataset.delId);
+        openDeleteModal(btn.dataset.delId);
       });
     });
   }
@@ -883,9 +1004,6 @@
 
   async function deleteConv(id) {
     if (!id) return;
-    if (!window.confirm('Delete this conversation and all messages? This cannot be undone.')) {
-      return;
-    }
     try {
       await apiFetch('support-conversations', {
         method: 'POST',
@@ -897,6 +1015,24 @@
     } catch (err) {
       console.warn('[support-widget] deleteConv error:', err);
     }
+  }
+
+  function openDeleteModal(id) {
+    if (!id) return;
+    _state.pendingDeleteId = id;
+    toggleGone(document.getElementById('sw-delete-modal'), false);
+  }
+
+  function closeDeleteModal() {
+    _state.pendingDeleteId = null;
+    toggleGone(document.getElementById('sw-delete-modal'), true);
+  }
+
+  async function confirmDeleteConv() {
+    const id = _state.pendingDeleteId;
+    if (!id) return closeDeleteModal();
+    closeDeleteModal();
+    await deleteConv(id);
   }
 
   // ── Send message ──────────────────────────────────────────────────────

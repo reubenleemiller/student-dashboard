@@ -16,6 +16,7 @@ const state = {
   currentThread: null,
   currentUserName: '',
   currentAdminName: 'Admin',
+  replyDraftByConversation: {},
   typingTimer: null,
   typingActive: false,
   typingConversationId: null,
@@ -118,12 +119,12 @@ function injectStyles() {
     .support-layout {
       display: grid;
       grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
-      gap: 1.5rem;
+      gap: 1.9rem;
       align-items: start;
-      margin-top: .85rem;
+      margin-top: 1.2rem;
     }
     #section-support .card.support-pane > .card-body {
-      padding: 1rem 1.05rem;
+      padding: 1.25rem 1.35rem;
     }
     .support-pane {
       min-height: 640px;
@@ -131,16 +132,16 @@ function injectStyles() {
     .support-list {
       display: flex;
       flex-direction: column;
-      gap: .5rem;
+      gap: .7rem;
       max-height: 680px;
       overflow: auto;
-      padding-right: .25rem;
+      padding-right: .4rem;
     }
     .support-thread {
       display: flex;
       flex-direction: column;
       min-height: 620px;
-      padding: .35rem .3rem .5rem;
+      padding: .45rem .45rem .7rem;
     }
     .support-conv {
       border: 1px solid var(--border);
@@ -205,8 +206,8 @@ function injectStyles() {
     }
     .support-thread-head {
       border-bottom: 1px solid var(--border);
-      padding-bottom: 1rem;
-      margin-bottom: 1rem;
+      padding-bottom: 1.15rem;
+      margin-bottom: 1.15rem;
     }
     .support-thread-head-top {
       display: flex;
@@ -227,7 +228,7 @@ function injectStyles() {
     .support-thread-body {
       display: flex;
       flex-direction: column;
-      gap: 1rem;
+      gap: 1.15rem;
       flex: 1;
       min-height: 0;
     }
@@ -316,6 +317,25 @@ function injectStyles() {
       color: var(--text-muted);
       font-size: .84rem;
       min-height: 1.25rem;
+    }
+    .support-typing-dots {
+      display: inline-flex;
+      align-items: center;
+      gap: .2rem;
+      margin-left: .1rem;
+    }
+    .support-typing-dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--primary);
+      animation: supportTypingBounce 1.25s infinite ease-in-out;
+    }
+    .support-typing-dots span:nth-child(2) { animation-delay: .18s; }
+    .support-typing-dots span:nth-child(3) { animation-delay: .36s; }
+    @keyframes supportTypingBounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: .45; }
+      40% { transform: translateY(-5px); opacity: 1; }
     }
     .support-pill {
       display: inline-flex;
@@ -424,7 +444,9 @@ async function loadConversationsInternal(keepSelection = false, showLoading = tr
   renderConversationList();
 
   if (keepSelection && state.currentConversationId) {
-    await loadConversationThread(state.currentConversationId, true, showLoading);
+    if (showLoading) {
+      await loadConversationThread(state.currentConversationId, true, showLoading);
+    }
   } else if (!state.currentConversationId && state.conversations.length) {
     await loadConversationThread(state.conversations[0].id, true, showLoading);
   }
@@ -531,7 +553,7 @@ function renderConversationList() {
         <div class="support-conv-preview">${escapeHtml(preview)}</div>
         <div class="support-conv-meta" style="margin-top:.35rem;display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap;">
           <span>${escapeHtml(formatRelative(conv.last_at) || formatDateTime(conv.last_at))}</span>
-          ${conv.user_typing_at && isTypingRecently(conv.user_typing_at) ? '<span class="support-pill"><i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Student typing</span>' : ''}
+          ${conv.user_typing_at && isTypingRecently(conv.user_typing_at) ? '<span class="support-pill"><i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Student typing <span class="support-typing-dots" aria-hidden="true"><span></span><span></span><span></span></span></span>' : ''}
         </div>
       </button>`;
   }).join('');
@@ -565,6 +587,7 @@ async function loadConversationThread(conversationId, forceRefresh = false, show
   state.currentAdminName = json.admin_name || 'Admin';
   renderConversationList();
   renderThread();
+  restoreReplyDraft(conversationId);
   if (forceRefresh) {
     renderConversationList();
   }
@@ -587,7 +610,7 @@ function renderThread() {
     ? '<span class="support-pill"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Resolved</span>'
     : '<span class="support-pill"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i> Open</span>';
   const typingLine = conversation.user_typing_at && isTypingRecently(conversation.user_typing_at)
-    ? '<i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Student is typing…'
+    ? '<i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Student is typing <span class="support-typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>'
     : '';
 
   const headerButtons = resolved
@@ -658,6 +681,7 @@ function renderThread() {
   document.getElementById('supportClearReplyBtn')?.addEventListener('click', () => {
     if (replyInput) {
       replyInput.value = '';
+      saveReplyDraft('');
       renderReplyCount();
       setTyping(false);
       replyInput.focus();
@@ -675,6 +699,18 @@ function renderReplyCount() {
   if (!input || !meta) return;
   const count = input.value.trim().length;
   meta.textContent = `${count} character${count === 1 ? '' : 's'}`;
+}
+
+function saveReplyDraft(value) {
+  if (!state.currentConversationId) return;
+  state.replyDraftByConversation[state.currentConversationId] = value;
+}
+
+function restoreReplyDraft(conversationId = state.currentConversationId) {
+  const input = document.getElementById('supportReplyInput');
+  if (!input || !conversationId) return;
+  input.value = state.replyDraftByConversation[conversationId] || '';
+  renderReplyCount();
 }
 
 async function handleReplySubmit(event) {
@@ -698,6 +734,7 @@ async function handleReplySubmit(event) {
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || 'Failed to send reply');
     input.value = '';
+    saveReplyDraft('');
     renderReplyCount();
     setTyping(false);
     showToast('Reply sent.', 'success');
@@ -748,6 +785,9 @@ async function deleteConversation() {
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || 'Delete failed');
     showToast('Conversation deleted.', 'success');
+    if (state.currentConversationId) {
+      delete state.replyDraftByConversation[state.currentConversationId];
+    }
     state.currentConversationId = null;
     state.currentThread = null;
     await loadConversations(false);
@@ -757,6 +797,8 @@ async function deleteConversation() {
 }
 
 function handleTypingInput() {
+  const input = document.getElementById('supportReplyInput');
+  if (input) saveReplyDraft(input.value);
   renderReplyCount();
   pingTypingTrue();
   clearTimeout(state.typingTimer);
