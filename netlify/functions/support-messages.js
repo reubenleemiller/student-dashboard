@@ -22,6 +22,14 @@ const INACTIVE_MS           = 5 * 60 * 1000;
 const { authenticate } = require('./_auth.js');
 const { sendEmail, escHtml, getSiteTitle } = require('./_email.js');
 
+async function getLastMessageCreatedAt(conversationId) {
+  const rows = await sbFetch(
+    `/support_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&select=created_at&order=created_at.desc&limit=1`
+  ).catch(() => []);
+  const lastMessage = Array.isArray(rows) && rows.length ? rows[0] : null;
+  return lastMessage?.created_at || null;
+}
+
 /** Call the Supabase REST API with service-role auth. */
 async function sbFetch(path, opts = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
@@ -198,6 +206,8 @@ exports.handler = async (event) => {
       };
     }
 
+    const lastMessageCreatedAt = await getLastMessageCreatedAt(conversation.id);
+
     const newMsgResult = await sbFetch('/support_messages', {
       method: 'POST',
       body: JSON.stringify({
@@ -211,19 +221,10 @@ exports.handler = async (event) => {
     const savedMsg = Array.isArray(newMsgResult) ? newMsgResult[0] : newMsgResult;
 
     try {
-      const countRes = await sbFetch(
-        `/support_messages?conversation_id=eq.${encodeURIComponent(conversation.id)}&from_admin=eq.false&select=id`,
-        { headers: { Prefer: 'count=exact,return=representation' } }
-      ).catch(() => []);
-      const adminRows = await sbFetch(
-        `/profiles?email=eq.${encodeURIComponent(ADMIN_EMAIL)}&select=last_seen_at&limit=1`
-      ).catch(() => []);
-      const adminRow = Array.isArray(adminRows) && adminRows.length ? adminRows[0] : null;
-      const lastSeenStr = adminRow?.last_seen_at || null;
-      const lastSeenMs = lastSeenStr ? new Date(lastSeenStr).getTime() : null;
-      const isAdminInactive = lastSeenMs === null || (Date.now() - lastSeenMs) > INACTIVE_MS;
+      const lastMessageMs = lastMessageCreatedAt ? new Date(lastMessageCreatedAt).getTime() : null;
+      const shouldNotify = lastMessageMs === null || (Date.now() - lastMessageMs) > INACTIVE_MS;
 
-      if (isAdminInactive) {
+      if (shouldNotify) {
         const siteTitle = getSiteTitle();
         await sendEmail({
           to: ADMIN_EMAIL,

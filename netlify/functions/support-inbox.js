@@ -58,6 +58,14 @@ async function getMessagesForTranscript(conversationId) {
   ).catch(() => []);
 }
 
+async function getLastMessageCreatedAt(conversationId) {
+  const rows = await sbFetch(
+    `/support_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&select=created_at&order=created_at.desc&limit=1`
+  ).catch(() => []);
+  const lastMessage = Array.isArray(rows) && rows.length ? rows[0] : null;
+  return lastMessage?.created_at || null;
+}
+
 async function getConversationById(conversationId) {
   const rows = await sbFetch(
     `/support_conversations?id=eq.${encodeURIComponent(conversationId)}&limit=1`
@@ -190,6 +198,8 @@ exports.handler = async (event) => {
           return json(400, { error: '"message" must be a non-empty string' });
         }
 
+        const lastMessageCreatedAt = await getLastMessageCreatedAt(conversation_id);
+
         const rows = await sbFetch('/support_messages', {
           method: 'POST',
           body: JSON.stringify({
@@ -203,6 +213,8 @@ exports.handler = async (event) => {
         });
 
         const saved = Array.isArray(rows) && rows.length ? rows[0] : rows;
+        const lastMessageMs = lastMessageCreatedAt ? new Date(lastMessageCreatedAt).getTime() : null;
+        const shouldNotify = lastMessageMs === null || (Date.now() - lastMessageMs) > INACTIVE_MS;
 
         await sbFetch(
           `/support_conversations?id=eq.${encodeURIComponent(conversation_id)}`,
@@ -218,15 +230,11 @@ exports.handler = async (event) => {
 
         try {
           const userRows = await sbFetch(
-            `/profiles?id=eq.${encodeURIComponent(conversation.user_id)}&select=full_name,last_seen_at&limit=1`
+            `/profiles?id=eq.${encodeURIComponent(conversation.user_id)}&select=full_name&limit=1`
           ).catch(() => []);
           const userProfile = Array.isArray(userRows) && userRows.length ? userRows[0] : null;
           const userName = userProfile?.full_name || conversation.user_email;
-          const lastSeenStr = userProfile?.last_seen_at || null;
-          const lastSeenMs = lastSeenStr ? new Date(lastSeenStr).getTime() : null;
-          const inactive = lastSeenMs === null || (Date.now() - lastSeenMs) > INACTIVE_MS;
-
-          if (inactive) {
+          if (shouldNotify) {
             const siteTitle = getSiteTitle();
             await sendEmail({
               to: conversation.user_email,
