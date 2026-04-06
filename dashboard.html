@@ -291,8 +291,8 @@
     const user = session.user;
 
     // ── Session timeout (non-admin users only) ────────────────────────
-    const SESSION_DURATION_MS = 3 * 60 * 60 * 1000; // 3 hours
-    const SESSION_WARN_MS     = 5 * 60 * 1000;       // warn when < 5 min remain
+    const SESSION_DURATION_MS = 2 * 60 * 1000; // (2 mins) 3 hours
+    const SESSION_WARN_MS     = 1 * 60 * 1000;       // (1 mins) warn when < 5 min remain
     const SESSION_KEY         = 'sessionStartTime';
 
     if (!sessionStorage.getItem(SESSION_KEY)) {
