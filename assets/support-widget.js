@@ -380,9 +380,8 @@
 
       /* Previous conversations */
       #sw-prev-wrap {
-        border-top: 1px solid var(--border, #e2e8f0);
+        border-bottom: 1px solid var(--border, #e2e8f0);
         flex-shrink: 0;
-        order: 1;
       }
       #sw-prev-toggle {
         width: 100%; background: transparent; border: none;
@@ -394,43 +393,57 @@
       }
       #sw-prev-toggle:hover { background: var(--bg, #f8fafc); }
       #sw-prev-list {
-        max-height: 150px; overflow-y: auto;
+        max-height: 260px; overflow-y: auto;
         background: var(--bg, #f8fafc);
         border-top: 1px solid var(--border, #e2e8f0);
+        padding: .4rem .6rem;
+        display: flex; flex-direction: column; gap: .4rem;
       }
-      .sw-prev-item {
-        padding: .45rem 1rem; cursor: pointer;
-        border-bottom: 1px solid var(--border, #e2e8f0);
-        font-size: .73rem; transition: background .15s;
-        display: flex; flex-direction: column; gap: 2px;
-      }
-      .sw-prev-item:last-child  { border-bottom: none; }
-      .sw-prev-item:hover       { background: var(--primary-light, #edf7eb); }
-      .sw-prev-item.sw-sel      { background: var(--primary-light, #edf7eb); }
-      .sw-prev-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: .5rem;
-      }
-      .sw-prev-date    { color: var(--text-muted, #64748b); font-size: .67rem; }
-      .sw-prev-preview { color: var(--text, #1e293b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .sw-prev-del {
-        border: none;
+      .sw-prev-section {
+        border: 1px solid var(--border, #e2e8f0);
         border-radius: 8px;
-        background: rgba(220,38,38,.08);
-        color: var(--danger, #dc2626);
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: .67rem;
-        line-height: 1;
-        padding: .2rem .45rem;
-        font-weight: 600;
-        white-space: nowrap;
+        overflow: hidden;
+        background: var(--surface, #fff);
       }
-      .sw-prev-del:hover { filter: brightness(.95); }
+      .sw-prev-header {
+        display: flex; align-items: center; gap: .4rem;
+        padding: .45rem .75rem;
+        cursor: pointer; user-select: none;
+        font-size: .73rem; font-weight: 600;
+        color: var(--text-muted, #64748b);
+        border-bottom: 1px solid var(--border, #e2e8f0);
+        background: var(--bg, #f8fafc);
+        transition: background .15s;
+      }
+      .sw-prev-header:hover { background: var(--primary-light, #edf7eb); }
+      .sw-prev-chevron { margin-left: auto; font-size: .65rem; transition: transform .2s; }
+      .sw-prev-chevron.sw-chev-open { transform: rotate(180deg); }
+      .sw-prev-msgs-content {
+        display: none;
+        max-height: 160px; overflow-y: auto;
+        padding: .4rem .5rem;
+        flex-direction: column; gap: .35rem;
+      }
+      .sw-prev-msgs-content.sw-open { display: flex; }
+      .sw-prev-actions {
+        display: flex; gap: .35rem;
+        padding: .35rem .5rem;
+        border-top: 1px solid var(--border, #e2e8f0);
+        flex-wrap: wrap;
+      }
+      .sw-prev-btn {
+        font-size: .72rem; padding: .2rem .65rem;
+        border: 1px solid var(--border, #e2e8f0);
+        border-radius: 12px; background: var(--surface, #fff);
+        cursor: pointer; color: var(--text-muted, #64748b);
+        font-family: inherit;
+        display: inline-flex; align-items: center; gap: .25rem;
+        transition: border-color .15s, background .15s, color .15s;
+      }
+      .sw-prev-btn:hover { border-color: #999; color: var(--text, #1e293b); }
+      .sw-prev-danger { border-color: var(--danger, #dc2626); color: var(--danger, #dc2626); }
+      .sw-prev-danger:hover { background: var(--danger, #dc2626); color: #fff; }
+      .sw-prev-btn:disabled { opacity: .5; cursor: not-allowed; }
 
       /* Delete modal */
       #sw-delete-modal {
@@ -779,7 +792,6 @@
       requestAnimationFrame(() => panel.classList.add('sw-open'));
       fab.setAttribute('aria-expanded', 'true');
       hideToast();
-      _state.selectedPrevId = null;
       _state.loading = true;
       _state.panelOpenTime = Date.now();
       _state.overlayReady = false;
@@ -818,7 +830,7 @@
   function focusInput() {
     setTimeout(() => {
       const input = document.getElementById('sw-input');
-      if (input && !_state.selectedPrevId) input.focus();
+      if (input) input.focus();
     }, 60);
   }
 
@@ -894,12 +906,6 @@
       return;
     }
 
-    // Viewing a specific past conversation
-    if (_state.selectedPrevId) {
-      renderPastConv(container, _state.selectedPrevId);
-      return;
-    }
-
     // No conversation and no messages yet
     if (!_state.conversation && _state.messages.length === 0) {
       container.innerHTML = `
@@ -944,68 +950,96 @@
       </div>`;
   }
 
-  async function renderPastConv(container, convId) {
-    // Show cached or fetch
-    if (_state.prevMsgCache[convId]) {
-      drawPastMsgs(container, convId, _state.prevMsgCache[convId]);
-      return;
+  // ── Previous conversations accordion helpers ─────────────────────────
+  function buildPrevConvSection(conv) {
+    const convId  = conv.id;
+    const dateStr = fmtDate(conv.resolved_at || conv.created_at);
+
+    const section = document.createElement('div');
+    section.className = 'sw-prev-section';
+
+    const header = document.createElement('div');
+    header.className = 'sw-prev-header';
+    header.setAttribute('role', 'button');
+    header.setAttribute('aria-expanded', 'false');
+    header.setAttribute('tabindex', '0');
+    header.innerHTML =
+      '<i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>' +
+      '<span>Previous Conversation \u00b7 ' + esc(dateStr) + '</span>' +
+      '<i class="fa-solid fa-chevron-down sw-prev-chevron" aria-hidden="true"></i>';
+
+    const msgsDiv = document.createElement('div');
+    msgsDiv.className = 'sw-prev-msgs-content';
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'sw-prev-actions sw-gone';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'sw-prev-btn sw-prev-danger';
+    deleteBtn.innerHTML = '<i class="fa-solid fa-trash" aria-hidden="true"></i> Delete';
+    deleteBtn.title = 'Permanently delete this conversation';
+    deleteBtn.addEventListener('click', () => openDeleteModal(convId, deleteBtn));
+
+    const reopenBtn = document.createElement('button');
+    reopenBtn.className = 'sw-prev-btn';
+    reopenBtn.innerHTML = '<i class="fa-solid fa-reply" aria-hidden="true"></i> Reopen';
+    reopenBtn.title = 'Reopen this conversation to continue it';
+    reopenBtn.addEventListener('click', () => reopenSpecificConv(convId));
+
+    actionsDiv.appendChild(deleteBtn);
+    if (conv.resolved) actionsDiv.appendChild(reopenBtn);
+
+    function toggle() {
+      const open = msgsDiv.classList.contains('sw-open');
+      const chev = header.querySelector('.sw-prev-chevron');
+      if (open) {
+        msgsDiv.classList.remove('sw-open');
+        toggleGone(actionsDiv, true);
+        if (chev) chev.classList.remove('sw-chev-open');
+        header.setAttribute('aria-expanded', 'false');
+      } else {
+        msgsDiv.classList.add('sw-open');
+        toggleGone(actionsDiv, false);
+        if (chev) chev.classList.add('sw-chev-open');
+        header.setAttribute('aria-expanded', 'true');
+        if (!_state.prevMsgCache[convId]) {
+          loadPrevMsgsAccordion(msgsDiv, convId);
+        } else {
+          renderPrevMsgsAccordion(msgsDiv, _state.prevMsgCache[convId]);
+        }
+      }
     }
 
-    container.innerHTML = `
-      <div class="sw-back-bar">
-        <button class="sw-back-btn" id="sw-back-btn">
-          <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Back
-        </button>
-        <span>Loading…</span>
-      </div>`;
+    header.addEventListener('click', toggle);
+    header.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
 
-    document.getElementById('sw-back-btn')?.addEventListener('click', backToActive);
+    section.appendChild(header);
+    section.appendChild(msgsDiv);
+    section.appendChild(actionsDiv);
+    return section;
+  }
 
+  async function loadPrevMsgsAccordion(container, convId) {
+    container.innerHTML = '<div class="sw-loading"><span class="sw-spin" aria-hidden="true"></span><span>Loading\u2026</span></div>';
     try {
       const res = await apiFetch(`support-messages?conversation_id=${encodeURIComponent(convId)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       _state.prevMsgCache[convId] = data.messages || [];
-      drawPastMsgs(container, convId, _state.prevMsgCache[convId]);
+      renderPrevMsgsAccordion(container, _state.prevMsgCache[convId]);
     } catch (err) {
-      container.innerHTML = `<div class="sw-empty"><span>Failed to load messages.</span></div>`;
+      container.innerHTML = '<div class="sw-empty"><span>Failed to load messages.</span></div>';
     }
   }
 
-  function drawPastMsgs(container, convId, messages) {
-    const conv     = _state.prevConvs.find(c => c.id === convId);
-    const dateStr  = conv ? fmtDate(conv.resolved_at || conv.created_at) : '';
-    const actions  = conv && conv.resolved
-      ? `<span style="margin-left:auto;display:inline-flex;gap:.5rem;">
-           <button class="sw-back-btn" id="sw-prev-reopen-btn">Reopen</button>
-           <button class="sw-back-btn" id="sw-prev-delete-btn" style="color:var(--danger,#dc2626)">Delete</button>
-         </span>`
-      : '';
-    const msgsHtml = messages.length
-      ? messages.map(msgHtml).join('')
-      : '<div class="sw-empty"><span>No messages in this conversation.</span></div>';
-
-    container.innerHTML = `
-      <div class="sw-back-bar">
-        <button class="sw-back-btn" id="sw-back-btn">
-          <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Back
-        </button>
-        <span>Resolved ${esc(dateStr)}</span>
-        ${actions}
-      </div>
-      <div style="flex:1;overflow-y:auto;padding:.75rem;display:flex;flex-direction:column;gap:.5rem;">
-        ${msgsHtml}
-      </div>`;
-
-    document.getElementById('sw-back-btn')?.addEventListener('click', backToActive);
-    document.getElementById('sw-prev-reopen-btn')?.addEventListener('click', () => reopenSpecificConv(convId));
-    document.getElementById('sw-prev-delete-btn')?.addEventListener('click', (event) => openDeleteModal(convId, event.currentTarget));
-  }
-
-  function backToActive() {
-    _state.selectedPrevId = null;
-    renderMessages();
-    renderPrevList();
+  function renderPrevMsgsAccordion(container, messages) {
+    if (!messages.length) {
+      container.innerHTML = '<div class="sw-empty"><span>No messages in this conversation.</span></div>';
+      return;
+    }
+    container.innerHTML = messages.map(msgHtml).join('');
   }
 
   // ── Previous conversations list ───────────────────────────────────────
@@ -1018,30 +1052,8 @@
       return;
     }
 
-    list.innerHTML = _state.prevConvs.map(c => `
-      <div class="sw-prev-item${_state.selectedPrevId === c.id ? ' sw-sel' : ''}"
-           role="listitem" data-id="${esc(c.id)}">
-        <div class="sw-prev-top">
-          <span class="sw-prev-date">${esc(fmtDate(c.resolved_at || c.created_at))} · Resolved</span>
-          <button class="sw-prev-del" data-del-id="${esc(c.id)}" title="Delete conversation" aria-label="Delete conversation">Delete</button>
-        </div>
-        <span class="sw-prev-preview">${esc(c.last_message?.body || 'No messages')}</span>
-      </div>`).join('');
-
-    list.querySelectorAll('.sw-prev-item').forEach(item => {
-      item.addEventListener('click', () => {
-        _state.selectedPrevId = item.dataset.id;
-        renderMessages();
-        renderPrevList();
-      });
-    });
-
-    list.querySelectorAll('.sw-prev-del').forEach((btn) => {
-      btn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        openDeleteModal(btn.dataset.delId, btn);
-      });
-    });
+    list.innerHTML = '';
+    _state.prevConvs.forEach(conv => list.appendChild(buildPrevConvSection(conv)));
   }
 
   // ── Conversation actions ──────────────────────────────────────────────
@@ -1079,7 +1091,6 @@
         method: 'POST',
         body: JSON.stringify({ action: 'reopen_own', conversation_id: id }),
       });
-      _state.selectedPrevId = null;
       await loadMessages(false, false);
     } catch (err) {
       console.warn('[support-widget] reopenConv error:', err);
@@ -1093,7 +1104,6 @@
         method: 'POST',
         body: JSON.stringify({ action: 'delete_own', conversation_id: id }),
       });
-      _state.selectedPrevId = null;
       delete _state.prevMsgCache[id];
       await loadMessages(false, false);
     } catch (err) {
@@ -1201,16 +1211,12 @@
     const inputRow = document.getElementById('sw-input-row');
     const resBtn   = document.getElementById('sw-resolve-btn');
 
-    const viewingPast = !!_state.selectedPrevId;
     const resolved = _state.conversation?.resolved === true;
     const hasConv  = !!_state.conversation;
 
-    // Show resolved banner when current conv is resolved and not viewing a past conv
-    toggleGone(banner,   !(resolved && !viewingPast));
-    // Hide input only when viewing a past conversation; keep visible when resolved
-    // so the user can type to start a new conversation (matches Template behavior)
-    toggleGone(inputRow, viewingPast);
-    toggleGone(resBtn,   !(hasConv && !resolved && !viewingPast));
+    toggleGone(banner,   !resolved);
+    toggleGone(inputRow, false);
+    toggleGone(resBtn,   !(hasConv && !resolved));
   }
 
   function togglePrev() {
