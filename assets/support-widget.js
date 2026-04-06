@@ -44,6 +44,7 @@
     toastTimer:     null,
     panelOpenTime:  0,        // Timestamp when panel was last opened
     overlayReady:   false,    // True once the initial load after open is done
+    openPrevMenuForId: null,  // convId whose accordion is currently open, or null
   };
 
   // ── Initialisation ───────────────────────────────────────────────────
@@ -756,7 +757,21 @@
         closeDeleteModal();
         return;
       }
+      if (_state.openPrevMenuForId !== null) {
+        _state.openPrevMenuForId = null;
+        renderPrevList();
+        return;
+      }
       if (_state.open) openPanel(false);
+    });
+
+    // Close the open accordion when clicking outside the previous-conversations list
+    document.addEventListener('click', (e) => {
+      if (_state.openPrevMenuForId === null) return;
+      const list = document.getElementById('sw-prev-list');
+      if (list && list.contains(e.target)) return;
+      _state.openPrevMenuForId = null;
+      renderPrevList();
     });
   }
 
@@ -951,7 +966,7 @@
   }
 
   // ── Previous conversations accordion helpers ─────────────────────────
-  function buildPrevConvSection(conv) {
+  function buildPrevConvSection(conv, isInitiallyOpen = false) {
     const convId  = conv.id;
     const dateStr = fmtDate(conv.resolved_at || conv.created_at);
 
@@ -961,18 +976,18 @@
     const header = document.createElement('div');
     header.className = 'sw-prev-header';
     header.setAttribute('role', 'button');
-    header.setAttribute('aria-expanded', 'false');
+    header.setAttribute('aria-expanded', isInitiallyOpen ? 'true' : 'false');
     header.setAttribute('tabindex', '0');
     header.innerHTML =
       '<i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>' +
       '<span>Previous Conversation \u00b7 ' + esc(dateStr) + '</span>' +
-      '<i class="fa-solid fa-chevron-down sw-prev-chevron" aria-hidden="true"></i>';
+      '<i class="fa-solid fa-chevron-down sw-prev-chevron' + (isInitiallyOpen ? ' sw-chev-open' : '') + '" aria-hidden="true"></i>';
 
     const msgsDiv = document.createElement('div');
-    msgsDiv.className = 'sw-prev-msgs-content';
+    msgsDiv.className = 'sw-prev-msgs-content' + (isInitiallyOpen ? ' sw-open' : '');
 
     const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'sw-prev-actions sw-gone';
+    actionsDiv.className = 'sw-prev-actions' + (isInitiallyOpen ? '' : ' sw-gone');
 
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'sw-prev-btn sw-prev-danger';
@@ -989,6 +1004,15 @@
     actionsDiv.appendChild(deleteBtn);
     if (conv.resolved) actionsDiv.appendChild(reopenBtn);
 
+    // If restoring the open state on re-render, populate messages from cache
+    if (isInitiallyOpen) {
+      if (_state.prevMsgCache[convId]) {
+        renderPrevMsgsAccordion(msgsDiv, _state.prevMsgCache[convId]);
+      } else {
+        loadPrevMsgsAccordion(msgsDiv, convId);
+      }
+    }
+
     function toggle() {
       const open = msgsDiv.classList.contains('sw-open');
       const chev = header.querySelector('.sw-prev-chevron');
@@ -997,11 +1021,13 @@
         toggleGone(actionsDiv, true);
         if (chev) chev.classList.remove('sw-chev-open');
         header.setAttribute('aria-expanded', 'false');
+        _state.openPrevMenuForId = null;
       } else {
         msgsDiv.classList.add('sw-open');
         toggleGone(actionsDiv, false);
         if (chev) chev.classList.add('sw-chev-open');
         header.setAttribute('aria-expanded', 'true');
+        _state.openPrevMenuForId = convId;
         if (!_state.prevMsgCache[convId]) {
           loadPrevMsgsAccordion(msgsDiv, convId);
         } else {
@@ -1047,13 +1073,21 @@
     const list = document.getElementById('sw-prev-list');
     if (!list || !_state.showPrev) return;
 
+    // If the previously open section is no longer in the list, clear the state
+    if (_state.openPrevMenuForId && !_state.prevConvs.find(c => c.id === _state.openPrevMenuForId)) {
+      _state.openPrevMenuForId = null;
+    }
+
     if (_state.prevConvs.length === 0) {
       list.innerHTML = '<div style="padding:.45rem 1rem;font-size:.73rem;color:var(--text-muted)">No previous conversations.</div>';
       return;
     }
 
     list.innerHTML = '';
-    _state.prevConvs.forEach(conv => list.appendChild(buildPrevConvSection(conv)));
+    _state.prevConvs.forEach(conv => {
+      const isOpen = conv.id === _state.openPrevMenuForId;
+      list.appendChild(buildPrevConvSection(conv, isOpen));
+    });
   }
 
   // ── Conversation actions ──────────────────────────────────────────────
