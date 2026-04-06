@@ -223,6 +223,8 @@ label        { font-size: .875rem; font-weight: 500; }
   border-top: 1px solid var(--border);
 }
 .user-info { font-size: .8rem; color: var(--text-muted); margin-bottom: .5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-timer { font-size: .75rem; color: var(--text-muted); margin-bottom: .5rem; text-align: center; }
+.session-timer.expiring-soon { color: var(--warning); font-weight: 600; }
 
 /* Main content */
 .main-content {

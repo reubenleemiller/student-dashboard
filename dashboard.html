@@ -51,6 +51,7 @@
       </nav>
       <div class="sidebar-footer">
         <div class="user-info" id="userInfo"></div>
+        <div id="sessionTimer" class="session-timer" aria-live="polite" aria-atomic="true" aria-label="Session time remaining"></div>
         <button class="btn btn-ghost btn-sm btn-block" id="logoutBtn">Logout</button>
       </div>
     </aside>
@@ -289,6 +290,54 @@
     }
     const user = session.user;
 
+    // ── Session timeout (non-admin users only) ────────────────────────
+    const SESSION_DURATION_MS = 3 * 60 * 60 * 1000; // 3 hours
+    const SESSION_WARN_MS     = 5 * 60 * 1000;       // warn when < 5 min remain
+    const SESSION_KEY         = 'sessionStartTime';
+
+    if (!sessionStorage.getItem(SESSION_KEY)) {
+      sessionStorage.setItem(SESSION_KEY, String(Date.now()));
+    }
+    const sessionStart = parseInt(sessionStorage.getItem(SESSION_KEY), 10);
+    const sessionEnd   = sessionStart + SESSION_DURATION_MS;
+
+    const timerEl = document.getElementById('sessionTimer');
+
+    function formatCountdown(ms) {
+      if (ms <= 0) return '0:00:00';
+      const totalSec = Math.floor(ms / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    let _sessionTimerInterval;
+    let _sessionExpired = false;
+
+    async function expireSession() {
+      if (_sessionExpired) return;
+      _sessionExpired = true;
+      clearInterval(_sessionTimerInterval);
+      timerEl.textContent = 'Session expired – redirecting to login…';
+      sessionStorage.removeItem(SESSION_KEY);
+      try { await supabase.auth.signOut(); } catch (_) { /* continue to redirect */ }
+      window.location.href = '/login.html';
+    }
+
+    function updateSessionTimer() {
+      const remaining = sessionEnd - Date.now();
+      if (remaining <= 0) {
+        expireSession();
+        return;
+      }
+      timerEl.textContent = `Session: ${formatCountdown(remaining)}`;
+      timerEl.classList.toggle('expiring-soon', remaining <= SESSION_WARN_MS);
+    }
+
+    updateSessionTimer();
+    _sessionTimerInterval = setInterval(updateSessionTimer, 1000);
+
     // ── Accept pending invite (idempotent) ────────────────────────────
     // Called on every load so invite is marked accepted after first sign-in,
     // regardless of which sign-in method was used.
@@ -310,6 +359,8 @@
 
     // ── Logout ────────────────────────────────────────────────────────
     document.getElementById('logoutBtn').addEventListener('click', async () => {
+      clearInterval(_sessionTimerInterval);
+      sessionStorage.removeItem(SESSION_KEY);
       await supabase.auth.signOut();
       window.location.href = '/login.html';
     });
