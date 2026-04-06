@@ -985,7 +985,6 @@
     reopenBtn.innerHTML = '<i class="fa-solid fa-reply" aria-hidden="true"></i> Reopen';
     reopenBtn.title = 'Reopen this conversation to continue it';
     reopenBtn.addEventListener('click', () => reopenSpecificConv(convId));
-    if (!conv.resolved) reopenBtn.style.display = 'none';
 
     actionsDiv.appendChild(deleteBtn);
     if (conv.resolved) actionsDiv.appendChild(reopenBtn);
